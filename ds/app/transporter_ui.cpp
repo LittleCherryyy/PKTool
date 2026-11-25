@@ -6,7 +6,7 @@
 #include "core/io/file_io.h"
 #include "core/saves/save_commit.h"
 #include "core/pokemon/pk3.h"
-#include "experiments/pccs/stage_transfer.h"
+#include "experiments/pccs/transfer_journal.h"
 #include <array>
 #include <algorithm>
 
@@ -32,7 +32,7 @@ void App::openTransporter() {
     }
     sprites_.clear();
     transportSave_.reset();
-    transportSourceBytes_.clear();
+    transportSourceBytes_.clear();transportDestBytes_.clear();transportReview_.reset();
     transportSource_.clear();transportDest_.clear();
     transportRows_.clear();transportNotes_.clear();transportPositions_.clear();
     transportMessage_.clear();transportAccepted_=false;
@@ -48,6 +48,9 @@ void App::openTransporter() {
 void App::transporterSelectSave(bool source) {
     if(transportCursor_<0 || transportCursor_>=static_cast<int>(transportSaves_.size())) return;
     auto path=transportSaves_[transportCursor_].path;
+#ifdef ARM9
+    if(!path.empty() && path[0]=='/') path="sd:"+path;
+#endif
     std::vector<uint8_t> bytes;
     if(!readImage(path,bytes)) { showMessage("Transporter","Cannot read save.");return; }
     auto loaded=saves::loadSaveFile(bytes);
@@ -58,7 +61,7 @@ void App::transporterSelectSave(bool source) {
     }
     if(source) {
         transportSource_=path; transportSourceBytes_=std::move(bytes);
-    } else transportDest_=path;
+    } else { transportDest_=path; transportDestBytes_=std::move(bytes); }
     transportSave_=std::move(loaded);
     transportRows_.clear();transportPositions_.clear();
     for(int b=0;b<transportSave_->boxCount();++b) {
@@ -80,35 +83,33 @@ void App::transporterSelectSave(bool source) {
 }
 void App::transporterPreview() {
     auto to=transportPositions_[transportCursor_];
-    std::vector<uint8_t> source,dest;
     transportSave_.reset();sprites_.clear();
     transportNotes_.clear();transportAccepted_=false;
-    if(!readImage(transportSource_,source) || source!=transportSourceBytes_ ||
-       !readImage(transportDest_,dest)) {
-        transportMessage_="Source changed or save cannot be read.";
-    } else {
-        // Source identity is bound to the original selected image. Destination
-        // is checked again for emptiness and validity during staging.
-        auto staged=pokemon::pccs_bridge::stageCrystalToRuby(source,dest,
-            {transportFromBox_,transportFromSlot_},{to.first,to.second});
-        transportAccepted_=staged.ok;
-        transportNotes_=std::move(staged.notes);
-        transportMessage_=staged.ok?"Conversion preview passed":staged.error;
-        if(staged.ok) {
-            auto p=pokemon::pk3::toPokemon(staged.converted.data(),staged.converted.size());
-            transportNotes_.insert(transportNotes_.begin(),p.nickname+" Lv"+std::to_string(p.level)+
-                " -> "+slotLabel(to.first,to.second));
-            transportNotes_.insert(transportNotes_.begin(),"OT: "+p.trainer.name+"  TID: "+std::to_string(p.trainer.tid));
-        }
+    transportReview_=pokemon::pccs_bridge::ReviewedTransfer::create(
+        transportSource_,transportDest_,transportSourceBytes_,transportDestBytes_,
+        {transportFromBox_,transportFromSlot_},{to.first,to.second},
+        transportMessage_,transportNotes_);
+    transportAccepted_=bool(transportReview_);
+    if(transportReview_) {
+        transportMessage_="Conversion preview passed";
+        const auto& raw=transportReview_->converted();
+        auto p=pokemon::pk3::toPokemon(raw.data(),raw.size());
+        transportNotes_.insert(transportNotes_.begin(),p.nickname+" Lv"+std::to_string(p.level)+
+            " -> "+slotLabel(to.first,to.second));
+        transportNotes_.insert(transportNotes_.begin(),"OT: "+p.trainer.name+"  TID: "+std::to_string(p.trainer.tid));
+        transportNotes_.insert(transportNotes_.begin(),"PID: "+std::to_string(p.pid)+"  SID: "+std::to_string(p.trainer.sid));
     }
-    transportSourceBytes_.clear();transportSourceBytes_.shrink_to_fit();
+    std::vector<uint8_t>().swap(transportSourceBytes_);
+    std::vector<uint8_t>().swap(transportDestBytes_);
     transportRows_=transportNotes_;
     transportPhase_=TransportPhase::Review;
     transportCursor_=transportScroll_=0;
 }
 void App::updateTransporter(const Input& in) {
     if(in.pressed&kKeyB) {
-        transportSave_.reset();transportSourceBytes_.clear();transportSourceBytes_.shrink_to_fit();
+        transportSave_.reset();transportReview_.reset();
+        std::vector<uint8_t>().swap(transportSourceBytes_);
+        std::vector<uint8_t>().swap(transportDestBytes_);
         transportRows_.clear();transportPositions_.clear();transportSaves_.clear();transportNotes_.clear();
         screen_=Screen::Home;
         return;
@@ -143,7 +144,16 @@ void App::updateTransporter(const Input& in) {
         }
         case TransportPhase::Destination: transporterSelectSave(false);break;
         case TransportPhase::DestinationSlot: transporterPreview();break;
-        case TransportPhase::Review: break; // deliberately no commit action
+        case TransportPhase::Review:
+            if(transportReview_ && transportAccepted_) {
+                if(transportReview_->originalsMatch()) {
+                    transportMessage_="Exact review confirmed (read-only)";
+                } else {
+                    transportMessage_="Save changed; review invalidated";
+                    transportAccepted_=false;transportReview_.reset();
+                }
+            }
+            break; // No journal persistence in the preview build.
     }
 }
 void App::drawTransporter(Canvas& top,Canvas& bottom) {
@@ -169,7 +179,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
     if(transportRows_.empty()) bottom.text(kFontLarge,0,80,256,Align::Center,"No eligible entries",kMuted);
     else drawList(bottom,transportRows_,transportCursor_,transportScroll_,5,8,246,22,7);
     if(transportPhase_==TransportPhase::Review)
-        drawHints(bottom,{{"+","Scroll"},{"B","Home"}},{0,kKeyB});
+        drawHints(bottom,{{"A","Recheck"},{"B","Home"}},{kKeyA,kKeyB});
     else drawHints(bottom,{{"A","Select"},{"+","Move"},{"B","Cancel"}},{kKeyA,0,kKeyB});
 }
 }

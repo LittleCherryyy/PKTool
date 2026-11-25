@@ -51,3 +51,10 @@ jobs:
             build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt006"
       - name: Test FAT path policy and journal state machine on host
         run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt006"
+      - name: Compile exact review persistence test
+        run: |
+          c++ -std=c++17 -O2 -Wall -Wextra -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \
+            experiments/pccs/pccs_bridge.cpp experiments/pccs/stage_transfer.cpp experiments/pccs/transfer_journal.cpp experiments/pccs/test_reviewed_transfer.cpp \
+            build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt006c"
+      - name: Verify reviewed bytes and stale save rejection
+        run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt006c"

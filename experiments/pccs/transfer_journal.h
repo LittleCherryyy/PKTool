@@ -2,6 +2,7 @@
 #pragma once
 #include "stage_transfer.h"
 #include <string>
+#include <memory>
 namespace pktool::pokemon::pccs_bridge {
 // POSIX and experimental internal-SD FAT backend. Single writer only.
 // No other application may open/modify the selected saves during recovery.
@@ -10,6 +11,24 @@ enum class JournalStatus { Complete, Interrupted, Conflict, IoError, InvalidJour
 struct JournalResult {
     JournalStatus status;
     std::string message;
+};
+// Opaque reviewed transfer: only the factory can construct a conversion.
+class ReviewedTransfer {
+public:
+    static std::unique_ptr<ReviewedTransfer> create(
+        const std::string& source,const std::string& destination,
+        const std::vector<uint8_t>& expectedSource,const std::vector<uint8_t>& expectedDestination,
+        BoxSlot from,BoxSlot to,std::string& error,std::vector<std::string>& notes);
+    const std::array<uint8_t,80>& converted() const { return staged_.converted; }
+    bool originalsMatch() const;
+    JournalResult persist(const std::string& journal) const;
+    ReviewedTransfer(const ReviewedTransfer&)=delete;
+    ReviewedTransfer& operator=(const ReviewedTransfer&)=delete;
+private:
+    ReviewedTransfer()=default;
+    std::string source_,destination_;
+    std::vector<uint8_t> sourceBefore_,destinationBefore_;
+    StagedTransfer staged_;
 };
 // Prepare immutable journal; does not alter either original save.
 // Use a fresh journal path outside both saves. Keep it as a backup afterward.

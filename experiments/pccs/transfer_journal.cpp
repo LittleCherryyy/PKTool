@@ -223,25 +223,62 @@ JournalResult apply(const std::string& path,const Bytes& before,const Bytes& aft
     return result(Status::Complete,"Verified replacement");
 }
 }
+std::unique_ptr<ReviewedTransfer> ReviewedTransfer::create(
+    const std::string& source,const std::string& destination,
+    const Bytes& expectedSource,const Bytes& expectedDestination,
+    BoxSlot from,BoxSlot to,std::string& error,std::vector<std::string>& notes) {
+    error.clear(); notes.clear();
+    auto s=normalized(source),d=normalized(destination);
+    if(s.empty()||d.empty()||pathKey(s)==pathKey(d)||
+       expectedSource.empty()||expectedDestination.empty()||
+       expectedSource.size()>maxSave||expectedDestination.size()>maxSave||
+       exists(s+".vpt-old")||exists(s+".vpt-new")||
+       exists(d+".vpt-old")||exists(d+".vpt-new")) {
+        error="Save path or existing transaction conflict"; return nullptr;
+    }
+    if(!exact(s,expectedSource)||!exact(d,expectedDestination)) {
+        error="Selected save changed; restart preview"; return nullptr;
+    }
+    auto staged=stageCrystalToRuby(expectedSource,expectedDestination,from,to);
+    notes=staged.notes;
+    if(!staged.ok) { error=staged.error;return nullptr; }
+    if(!exact(s,expectedSource)||!exact(d,expectedDestination)) {
+        error="Save changed during conversion";return nullptr;
+    }
+    std::unique_ptr<ReviewedTransfer> reviewed(new ReviewedTransfer);
+    reviewed->source_=std::move(s);reviewed->destination_=std::move(d);
+    reviewed->sourceBefore_=expectedSource;reviewed->destinationBefore_=expectedDestination;
+    reviewed->staged_=std::move(staged);
+    return reviewed;
+}
+bool ReviewedTransfer::originalsMatch() const {
+    return exact(source_,sourceBefore_)&&exact(destination_,destinationBefore_);
+}
+JournalResult ReviewedTransfer::persist(const std::string& journal) const {
+    auto j=normalized(journal);
+    if(!distinct(j,source_,destination_)||exists(j)||exists(j+".new")||
+       exists(source_+".vpt-old")||exists(source_+".vpt-new")||
+       exists(destination_+".vpt-old")||exists(destination_+".vpt-new")||!originalsMatch())
+        return result(Status::Conflict,"Reviewed files changed or transaction conflict");
+    Record r{source_,destination_,sourceBefore_,destinationBefore_,staged_.sourceAfter,staged_.destinationAfter};
+    auto bytes=encode(r);
+    if(bytes.size()>maxJournal||!originalsMatch()||!writeNew(j+".new",bytes)||
+       !moveNew(j+".new",j)||!exact(j,bytes))
+        return result(Status::IoError,"Cannot persist and verify reviewed journal");
+    return result(Status::Complete,"Reviewed journal prepared; originals untouched");
+}
 JournalResult prepareJournal(const std::string& journal,const std::string& source,
                              const std::string& destination,BoxSlot from,BoxSlot to) {
     auto j=normalized(journal),s=normalized(source),d=normalized(destination);
-    if(!distinct(j,s,d)||exists(j)||exists(j+".new")||exists(s+".vpt-old")||
-       exists(s+".vpt-new")||exists(d+".vpt-old")||exists(d+".vpt-new"))
+    if(!distinct(j,s,d)||exists(j)||exists(j+".new"))
         return result(Status::Conflict,"Existing transaction or path conflict");
-    Record r; r.source=s;r.dest=d;
-    if(!readBounded(s,r.sb,maxSave)||!readBounded(d,r.db,maxSave))
+    Bytes sb,db;
+    if(!readBounded(s,sb,maxSave)||!readBounded(d,db,maxSave))
         return result(Status::IoError,"Cannot read original saves");
-    auto staged=stageCrystalToRuby(r.sb,r.db,from,to);
-    if(!staged.ok) return {Status::Conflict,staged.error};
-    r.sa=std::move(staged.sourceAfter);r.da=std::move(staged.destinationAfter);
-    auto bytes=encode(r);
-    // Free staging images before further file reads.
-    staged=StagedTransfer{};
-    if(bytes.size()>maxJournal||!exact(s,r.sb)||!exact(d,r.db)||
-       !writeNew(j+".new",bytes)||!moveNew(j+".new",j)||!exact(j,bytes))
-        return result(Status::IoError,"Cannot persist and verify journal");
-    return result(Status::Complete,"Journal prepared; originals untouched");
+    std::string error;std::vector<std::string> notes;
+    auto reviewed=ReviewedTransfer::create(s,d,sb,db,from,to,error,notes);
+    if(!reviewed) return {Status::Conflict,error};
+    return reviewed->persist(j);
 }
 JournalResult resumeJournal(const std::string& journal,const std::string& source,
                             const std::string& destination,StopPoint stop) {

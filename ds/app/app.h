@@ -5,6 +5,9 @@
 #include <vector>
 
 #include "core/bank/bank.h"
+#ifdef VPT_TRANSPORTER_PREVIEW
+#include "experiments/pccs/transfer_journal.h"
+#endif
 #include "core/io/settings.h"
 #include "core/legality/legality.h"
 #include "core/pokemon/entity.h"
@@ -172,7 +175,8 @@ private:
     TransportPhase transportPhase_ = TransportPhase::Source;
     std::vector<saves::SaveSummary> transportSaves_;
     std::unique_ptr<saves::SaveFile> transportSave_;
-    std::vector<uint8_t> transportSourceBytes_;
+    std::vector<uint8_t> transportSourceBytes_, transportDestBytes_;
+    std::unique_ptr<pokemon::pccs_bridge::ReviewedTransfer> transportReview_;
     std::string transportSource_, transportDest_, transportMessage_;
     std::vector<std::string> transportRows_, transportNotes_;
     std::vector<std::pair<int,int>> transportPositions_;
