@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Synthetic fixtures only. No save files, no bank writes.
 #include "pccs_bridge.h"
+#include "pccs_policy.h"
 #include "core/pokemon/create4.h"
 #include "core/pokemon/entity.h"
 #include "core/pokemon/pk2.h"
@@ -17,6 +18,39 @@ namespace legal = pktool::legality;
 namespace bridge = pk::pccs_bridge;
 
 int main() {
+    // Regression: allow only the exact non-invalid, expected PCCS warning.
+    pk::Pokemon policyPokemon;
+    policyPokemon.format = 3;
+    policyPokemon.species = 155;
+    policyPokemon.originGame = legal::version::kFireRed;
+    policyPokemon.trainer.tid = 12345;
+    policyPokemon.trainer.sid = 0;
+    policyPokemon.pid = 0x12345678;
+    legal::Report report;
+    report.findings.push_back({legal::Severity::Warning, "SID is 0"});
+    if (!bridge::acceptsFreshLegalOutput(policyPokemon, report)) return 10;
+    auto other = report;
+    other.findings.push_back({legal::Severity::Warning, "Unverified encounter"});
+    if (bridge::acceptsFreshLegalOutput(policyPokemon, other)) return 11;
+    other = report;
+    other.findings.push_back({legal::Severity::Invalid, "Invalid moves"});
+    if (bridge::acceptsFreshLegalOutput(policyPokemon, other)) return 12;
+    auto wrong = policyPokemon;
+    wrong.trainer.sid = 5;
+    if (bridge::acceptsFreshLegalOutput(wrong, report)) return 13;
+    wrong = policyPokemon;
+    wrong.shiny = true;
+    if (bridge::acceptsFreshLegalOutput(wrong, report)) return 14;
+    wrong = policyPokemon;
+    wrong.pid = wrong.trainer.tid;
+    if (bridge::acceptsFreshLegalOutput(wrong, report)) return 15;
+    wrong = policyPokemon;
+    wrong.originGame = legal::version::kRuby;
+    if (bridge::acceptsFreshLegalOutput(wrong, report)) return 16;
+    wrong = policyPokemon;
+    wrong.trainer.tid = 0;
+    if (bridge::acceptsFreshLegalOutput(wrong, report)) return 17;
+    std::puts("PASS: eight warning policy assertions");
     pk::create4::Trainer trainer;
     trainer.name = "ASH";
     trainer.tid = 12345;
@@ -83,12 +117,12 @@ int main() {
             continue;
         }
         auto target = pk::pk3::toPokemon(preview.data.data(), preview.data.size());
-        if (target.species != species || legal::checkGen3(target).overall() != legal::Severity::Valid) {
+        if (target.species != species || !bridge::acceptsFreshLegalOutput(target, legal::checkGen3(target))) {
             std::puts("FAIL: preview returned non-valid conversion");
             ++failed;
             continue;
         }
-        std::puts("PASS: strict read-only conversion");
+        std::printf("PASS: strict read-only conversion; checker severity %u (warnings retained)\n", unsigned(legal::checkGen3(target).overall()));
         ++passed;
         auto egg = entity;
         egg[pk::pk2::kEggOffset] = 1;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pccs_bridge.h"
 #include "pccs_preflight.h"
+#include "pccs_policy.h"
 #include "core/pokemon/pk2.h"
 #include "core/pokemon/pk3.h"
 #include "core/legality/legality.h"
@@ -69,9 +70,12 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
     }
     const auto targetReport = pktool::legality::checkGen3(target);
     for (const auto& finding : targetReport.findings) result.notes.push_back(finding.text);
-    if (targetReport.overall() != pktool::legality::Severity::Valid) {
+    if (!acceptsFreshLegalOutput(target, targetReport)) {
         result.error = "Destination legality cannot be confirmed";
         return result;
+    }
+    if (targetReport.overall() == legality::Severity::Warning) {
+        result.notes.push_back("Expected PCCS SID=0 warning retained; Gen III has a SID, Gen II does not.");
     }
     result.data = bytes;
     result.notes.push_back("PCCS LEGAL: unofficial conversion; not an official Nintendo transfer");
