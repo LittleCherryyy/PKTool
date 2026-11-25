@@ -186,6 +186,16 @@ void App::transporterPreview() {
     }
     std::vector<uint8_t>().swap(transportSourceBytes_);
     std::vector<uint8_t>().swap(transportDestBytes_);
+    if(!transportAccepted_) {
+        std::string rest=transportMessage_;
+        while(!rest.empty()) {
+            size_t n=std::min<size_t>(rest.size(),30);
+            while(n<rest.size() && (static_cast<unsigned char>(rest[n])&0xc0)==0x80) --n;
+            if(n==0) break;
+            transportNotes_.push_back(rest.substr(0,n));
+            rest.erase(0,n);
+        }
+    }
     transportRows_=transportNotes_;
     transportPhase_=TransportPhase::Review;
     transportCursor_=transportScroll_=0;
