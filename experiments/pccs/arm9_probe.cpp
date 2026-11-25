@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <array>
 #include "experiments/pccs/pccs_bridge.h"
+#include "experiments/pccs/transfer_journal.h"
 #include "core/pokemon/create4.h"
 #include "core/pokemon/entity.h"
 #include "core/pokemon/pk2.h"
@@ -11,8 +12,14 @@
 
 void vptArm9Probe() {
     namespace pk = pktool::pokemon;
+    // Keep journal symbols linked without executing any storage operation.
+    // Volatile function pointers ensure that linker GC cannot discard them.
+    auto volatile prepare = &pk::pccs_bridge::prepareJournal;
+    auto volatile resume = &pk::pccs_bridge::resumeJournal;
+    (void)prepare;
+    (void)resume;
     consoleDemoInit();
-    std::printf("VPT003 ARM9 read-only probe\n");
+    std::printf("VPT006 ARM9 read-only probe\n");
     pk::create4::Trainer trainer;
     trainer.name = "ASH";
     trainer.tid = 12345;

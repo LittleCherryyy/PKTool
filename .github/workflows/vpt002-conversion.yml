@@ -44,3 +44,10 @@ jobs:
             build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt005"
       - name: Test destination-first persistence and interruption recovery
         run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt005"
+      - name: Compile experimental FAT backend host simulation
+        run: |
+          c++ -std=c++17 -O2 -Wall -Wextra -DVPT_FAT_TEST -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \
+            experiments/pccs/pccs_bridge.cpp experiments/pccs/stage_transfer.cpp experiments/pccs/transfer_journal.cpp experiments/pccs/test_transfer_journal.cpp \
+            build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt006"
+      - name: Test FAT path policy and journal state machine on host
+        run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt006"

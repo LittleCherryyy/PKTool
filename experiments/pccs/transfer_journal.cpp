@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "transfer_journal.h"
 #include "core/io/file_io.h"
+#if defined(ARM9) || defined(VPT_FAT_TEST)
+#define VPT_FAT_STORAGE 1
+#include <sys/stat.h>
+#else
 #include <filesystem>
+#endif
 #include <fcntl.h>
 #include <unistd.h>
 #include <cerrno>
@@ -9,12 +14,51 @@
 #include <limits>
 namespace pktool::pokemon::pccs_bridge {
 namespace {
+#ifndef VPT_FAT_STORAGE
 namespace fs=std::filesystem;
+#endif
 using Bytes=std::vector<uint8_t>;
 using Status=JournalStatus;
 constexpr size_t maxSave=160*1024, maxJournal=4*maxSave+8192;
 struct Record { std::string source,dest; Bytes sb,db,sa,da; };
 JournalResult result(Status s,const char* m) { return {s,m}; }
+#ifdef VPT_FAT_STORAGE
+// Only the DSi internal SD mount is supported. Restrict paths to unambiguous
+// ASCII components; reject relative paths, traversal, DOS short-name aliases,
+// trailing dots/spaces and other mounts. No FAT symlinks are supported.
+bool exists(const std::string& p) {
+    struct stat st{};
+    errno=0;
+    return stat(p.c_str(),&st)==0 || errno!=ENOENT;
+}
+bool regular(const std::string& p) {
+    struct stat st{};
+    return stat(p.c_str(),&st)==0 && S_ISREG(st.st_mode);
+}
+std::string normalized(const std::string& p) {
+    if(p.size()<5 || p.size()>240 || p.compare(0,4,"sd:/")!=0) return {};
+    size_t start=4;
+    for(size_t i=4;i<=p.size();++i) {
+        if(i==p.size() || p[i]=='/') {
+            if(i==start || i-start>220 || p[start]=='.' || p[i-1]=='.' ||
+               p[start]==' ' || p[i-1]==' ') return {};
+            start=i+1;
+        } else {
+            char c=p[i];
+            if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||
+                 c==' '||c=='_'||c=='-'||c=='.'||c=='('||c==')'||c=='['||c==']')) return {};
+        }
+    }
+    struct stat st{};
+    auto parent=p.substr(0,p.find_last_of('/')+1);
+    if(stat(parent.c_str(),&st)!=0 || !S_ISDIR(st.st_mode)) return {};
+    return p;
+}
+std::string pathKey(std::string p) {
+    for(char& c:p) if(c>='A'&&c<='Z') c=char(c-'A'+'a');
+    return p;
+}
+#else
 bool exists(const std::string& p) {
     std::error_code ec;
     auto t=fs::symlink_status(p,ec).type();
@@ -33,9 +77,12 @@ std::string normalized(const std::string& p) {
     auto parent=fs::canonical(a.parent_path(),ec);
     return ec?std::string(): (parent/a.filename()).string();
 }
+std::string pathKey(const std::string& p) { return p; }
+#endif
 bool distinct(const std::string& j,const std::string& s,const std::string& d) {
     if(j.empty()||s.empty()||d.empty()) return false;
     std::vector<std::string> paths{j,j+".new",s,s+".vpt-old",s+".vpt-new",d,d+".vpt-old",d+".vpt-new"};
+    for(auto& p:paths) p=pathKey(p);
     std::sort(paths.begin(),paths.end());
     return std::adjacent_find(paths.begin(),paths.end())==paths.end();
 }
@@ -46,9 +93,30 @@ bool readBounded(const std::string& p,Bytes& out,size_t limit) {
            out.size()==static_cast<size_t>(n);
 }
 bool exact(const std::string& p,const Bytes& b) {
-    Bytes got;
-    return readBounded(p,got,b.size()) && got==b;
+    if(!regular(p) || io::fileSize(p)!=static_cast<long>(b.size())) return false;
+    io::FileReader f;
+    if(!f.open(p) || f.size()!=b.size()) return false;
+    std::array<uint8_t,4096> chunk{};
+    for(size_t off=0;off<b.size();off+=chunk.size()) {
+        auto n=std::min(chunk.size(),b.size()-off);
+        if(!f.read(off,n,chunk.data()) || !std::equal(chunk.begin(),chunk.begin()+n,b.begin()+off))
+            return false;
+    }
+    return true;
 }
+#ifdef VPT_FAT_STORAGE
+// libfat flushes its cache on successful rename and fsync of modified files.
+// It has no directory-fsync contract. This is a compile/runtime candidate,
+// not proof of persistence through sudden power loss on a physical SD card.
+bool syncParent(const std::string&) { return true; }
+bool syncFile(const std::string& p) {
+    int fd=open(p.c_str(),O_RDWR);
+    if(fd<0) return false;
+    bool ok=fsync(fd)==0;
+    return close(fd)==0 && ok;
+}
+constexpr int createFlags=O_WRONLY|O_CREAT|O_EXCL;
+#else
 bool syncParent(const std::string& p) {
     int fd=open(fs::path(p).parent_path().c_str(),O_RDONLY|O_DIRECTORY);
     if(fd<0) return false;
@@ -61,10 +129,12 @@ bool syncFile(const std::string& p) {
     bool ok=fsync(fd)==0;
     return close(fd)==0 && ok;
 }
+constexpr int createFlags=O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW;
+#endif
 // Exclusive create, fsync, close, exact readback, directory sync. No silent
 // truncation or deletion of a previous file even if an IO error occurs.
 bool writeNew(const std::string& p,const Bytes& b) {
-    int fd=open(p.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+    int fd=open(p.c_str(),createFlags,0600);
     if(fd<0) return false;
     size_t done=0;
     while(done<b.size()) {
@@ -79,7 +149,11 @@ bool writeNew(const std::string& p,const Bytes& b) {
 }
 bool moveNew(const std::string& a,const std::string& b) {
     if(exists(b) || !regular(a) || std::rename(a.c_str(),b.c_str())!=0) return false;
+#ifdef VPT_FAT_STORAGE
+    return syncFile(b);
+#else
     return syncParent(a) && (fs::path(a).parent_path()==fs::path(b).parent_path() || syncParent(b));
+#endif
 }
 uint32_t crc(const uint8_t* p,size_t n) {
     uint32_t c=0xffffffffu;
@@ -93,6 +167,7 @@ void word(Bytes& b,uint32_t x) { for(int i=0;i<4;++i) b.push_back(uint8_t(x>>(8*
 void field(Bytes& b,const uint8_t* p,size_t n) { word(b,uint32_t(n)); b.insert(b.end(),p,p+n); }
 Bytes encode(const Record& r) {
     Bytes b{'V','P','T','J','0','0','0','1'};
+    b.reserve(36+r.source.size()+r.dest.size()+r.sb.size()+r.db.size()+r.sa.size()+r.da.size());
     field(b,reinterpret_cast<const uint8_t*>(r.source.data()),r.source.size());
     field(b,reinterpret_cast<const uint8_t*>(r.dest.data()),r.dest.size());
     for(auto p:{&r.sb,&r.db,&r.sa,&r.da}) field(b,p->data(),p->size());
@@ -161,6 +236,8 @@ JournalResult prepareJournal(const std::string& journal,const std::string& sourc
     if(!staged.ok) return {Status::Conflict,staged.error};
     r.sa=std::move(staged.sourceAfter);r.da=std::move(staged.destinationAfter);
     auto bytes=encode(r);
+    // Free staging images before further file reads.
+    staged=StagedTransfer{};
     if(bytes.size()>maxJournal||!exact(s,r.sb)||!exact(d,r.db)||
        !writeNew(j+".new",bytes)||!moveNew(j+".new",j)||!exact(j,bytes))
         return result(Status::IoError,"Cannot persist and verify journal");

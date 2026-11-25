@@ -44,6 +44,8 @@ a = "int main() {"
 assert s.count(a) == 1
 p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();"))
 pathlib.Path("ds/vpt_arm9_bridge.cpp").write_text('#include "../experiments/pccs/pccs_bridge.cpp"\n')
+pathlib.Path("ds/vpt_arm9_stage.cpp").write_text('#include "../experiments/pccs/stage_transfer.cpp"\n')
+pathlib.Path("ds/vpt_arm9_journal.cpp").write_text('#include "../experiments/pccs/transfer_journal.cpp"\n')
 pathlib.Path("ds/vpt_arm9_probe.cpp").write_text(pathlib.Path("experiments/pccs/arm9_probe.cpp").read_text())
 PY
 make -j2
@@ -51,5 +53,7 @@ make -j2
 "$arm-nm" -C PKTool.elf > "$work/symbols"
 grep -F 'previewCrystalToRuby(' "$work/symbols"
 grep -F 'GBPokemon::convertToGen3(' "$work/symbols"
+grep -F 'pccs_bridge::prepareJournal(' "$work/symbols"
+grep -F 'pccs_bridge::resumeJournal(' "$work/symbols"
 # Neither the linked NDS nor the static library is published by this workflow.
 echo "PASS: linked ARM9 probe (build only; no hardware execution)"

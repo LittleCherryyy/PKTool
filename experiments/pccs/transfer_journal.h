@@ -3,7 +3,7 @@
 #include "stage_transfer.h"
 #include <string>
 namespace pktool::pokemon::pccs_bridge {
-// POSIX host prototype, not yet linked into the DS. Single writer only.
+// POSIX and experimental internal-SD FAT backend. Single writer only.
 // No other application may open/modify the selected saves during recovery.
 enum class StopPoint { None, DestinationMoved, DestinationWritten, SourceMoved };
 enum class JournalStatus { Complete, Interrupted, Conflict, IoError, InvalidJournal };

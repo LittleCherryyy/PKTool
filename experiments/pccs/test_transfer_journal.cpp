@@ -39,10 +39,20 @@ int main() {
     const auto sb=s->data(),db=d->data();
     char root[]="/tmp/vpt005-XXXXXX";REQUIRE(mkdtemp(root)!=nullptr);
     struct Cleanup { const char* p; ~Cleanup(){std::error_code ec;fs::remove_all(p,ec);} } cleanup{root};
+#ifdef VPT_FAT_TEST
+    // Host simulation of libfat path policy, not a FAT filesystem emulator.
+    auto cwd=fs::current_path();
+    struct RestoreCwd { fs::path p; ~RestoreCwd(){fs::current_path(p);} } restore{cwd};
+    fs::current_path(root);
+    REQUIRE(fs::create_directory("sd:"));
+    const std::string prefix="sd:";
+#else
+    const std::string prefix=root;
+#endif
     int n=0;
     for(auto stop:{br::StopPoint::None,br::StopPoint::DestinationMoved,
                    br::StopPoint::DestinationWritten,br::StopPoint::SourceMoved}) {
-        std::string folder=std::string(root)+"/"+std::to_string(n++);
+        std::string folder=prefix+"/"+std::to_string(n++);
         REQUIRE(fs::create_directory(folder));
         auto a=folder+"/crystal.sav",b=folder+"/ruby.sav",j=folder+"/transfer.vpt";
         REQUIRE(writeFixture(a,sb)&&writeFixture(b,db));
@@ -73,7 +83,7 @@ int main() {
         REQUIRE(exact(a,sa)&&exact(b,da));
         std::printf("PASS interruption case %d\n",n);
     }
-    std::string folder=std::string(root)+"/conflict";REQUIRE(fs::create_directory(folder));
+    std::string folder=prefix+"/conflict";REQUIRE(fs::create_directory(folder));
     auto a=folder+"/crystal.sav",b=folder+"/ruby.sav",j=folder+"/transfer.vpt";
     REQUIRE(writeFixture(a,sb)&&writeFixture(b,db));
     REQUIRE(br::prepareJournal(j,a,b,{0,0},{0,0}).status==br::JournalStatus::Complete);
@@ -87,6 +97,13 @@ int main() {
     REQUIRE(writeFixture(j,corrupt));
     REQUIRE(br::resumeJournal(j,a,b).status==br::JournalStatus::InvalidJournal);
     REQUIRE(exact(a,sb)&&exact(b,db));
+#ifdef VPT_FAT_TEST
+    REQUIRE(br::prepareJournal("fat:/transfer.vpt",a,b,{0,0},{0,0}).status==br::JournalStatus::Conflict);
+    REQUIRE(br::prepareJournal("sd:/../escape.vpt",a,b,{0,0},{0,0}).status==br::JournalStatus::Conflict);
+    REQUIRE(br::prepareJournal("sd:/ALIAS~1.VPT",a,b,{0,0},{0,0}).status==br::JournalStatus::Conflict);
+    REQUIRE(br::prepareJournal("sd:/conflict/CRYSTAL.SAV",a,b,{0,0},{0,0}).status==br::JournalStatus::Conflict);
+    std::puts("PASS: FAT path policy (host simulation)");
+#endif
     std::puts("PASS: four completion/recovery cases, path mismatch, edited destination, corrupt journal and idempotence");
     return 0;
 }
