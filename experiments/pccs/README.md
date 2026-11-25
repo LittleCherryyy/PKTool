@@ -33,3 +33,6 @@ Only the preflight test is standalone. The converter itself has not yet been com
 
 ## VPT002 host conversion probe
 The independent VPT002 workflow fetches the exact PCCS pin into the ephemeral runner, builds its host library and PKTool's portable core, then executes three synthetic English Crystal starter fixtures through the actual LEGAL API and strict adapter. It checks encrypted PK3 serialization, decoded checksum and identity, independent legality checks, rejection of eggs, and source immutability. Any refusal is a test failure, not a reason to relax legality. The job uploads no PCCS code or linked binaries. This is a test candidate until the job passes; no hardware or save transfer claims.
+
+### First probe finding
+[Run 45594895514](https://github.com/LittleCherryyy/PKTool/actions/runs/45594895514) built both libraries and linked the adapter; all three converted fixtures failed the PK3 checksum/identity gate. PCCS infers encryption from checksum mismatch. Fresh conversion output requires explicit checksum initialization, as in the upstream convertPKs example. The follow-up initializes this checksum before asking for canonical plaintext and checks both upstream serialization paths against PKTool. Results still require CI verification.

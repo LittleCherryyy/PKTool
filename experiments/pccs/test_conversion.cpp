@@ -44,12 +44,24 @@ int main() {
             ++failed;
             continue;
         }
-        auto raw = output.outputByteArray(true, false);
-        pk::pk3::decrypt(raw.data());
+        output.setChecksum(output.calculateChecksum());
+        // Test both PCCS serialization paths independently. Copy before either
+        // serialization because outputByteArray mutates its internal layout.
+        ::Gen3Pokemon encryptedCopy(output);
+        auto raw = output.outputByteArray(false, true);
+        auto encrypted = encryptedCopy.outputByteArray(true, false);
+        pk::pk3::decrypt(encrypted.data());
+        if (raw != encrypted) {
+            std::puts("FAIL: upstream canonical and encrypted serialization differ");
+            ++failed;
+            continue;
+        }
         const auto decoded = pk::pk3::toPokemon(raw.data(), raw.size());
         if (pk::pk3::storedChecksum(raw.data()) != pk::pk3::calcChecksum(raw.data()) ||
             decoded.species != species || decoded.trainer.tid != source.trainer.tid) {
-            std::puts("FAIL: upstream output checksum or identity");
+            std::printf("FAIL: upstream checksum or identity: checksum %04x vs %04x, species %u vs %u, TID %u vs %u\n",
+                        pk::pk3::storedChecksum(raw.data()), pk::pk3::calcChecksum(raw.data()),
+                        decoded.species, species, decoded.trainer.tid, source.trainer.tid);
             ++failed;
             continue;
         }

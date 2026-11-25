@@ -40,10 +40,19 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
         result.error = "PCCS LEGAL conversion refused";
         return result;
     }
-    // Serialize in actual at-rest PK3 layout and use PKTool's own decoder.
-    // This path still needs verification against real PCCS vectors.
-    auto bytes = converted.outputByteArray(true, false);
-    pk3::decrypt(bytes.data());
+    // Newly converted PCCS data is plaintext with a stale checksum.
+    // PCCS detects encryption by comparing the checksum, so initialize it
+    // before serialization, following upstream examples/convertPKs/main.cpp.
+    converted.setChecksum(converted.calculateChecksum());
+    auto bytes = converted.outputByteArray(false, true); // canonical GAEM
+    // Independent PKTool at-rest encoding/decoding must round-trip.
+    auto roundtrip = bytes;
+    pk3::encrypt(roundtrip.data());
+    pk3::decrypt(roundtrip.data());
+    if (roundtrip != bytes) {
+        result.error = "PK3 encryption round trip failed";
+        return result;
+    }
     if (pk3::isEmptySlot(bytes.data()) || (bytes[pk3::offset::kFlags] & 1) ||
         pk3::storedChecksum(bytes.data()) != pk3::calcChecksum(bytes.data())) {
         result.error = "Invalid converted PK3 structure or checksum";
