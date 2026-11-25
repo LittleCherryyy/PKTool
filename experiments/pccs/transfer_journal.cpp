@@ -24,7 +24,8 @@ struct Record { std::string source,dest; Bytes sb,db,sa,da; };
 JournalResult result(Status s,const char* m) { return {s,m}; }
 #ifdef VPT_FAT_STORAGE
 // Only the DSi internal SD mount is supported. Restrict paths to unambiguous
-// ASCII components; reject relative paths, traversal, DOS short-name aliases,
+// ASCII and UTF-8 Latin-1 letters; reject relative paths, traversal, malformed UTF-8,
+// DOS short-name aliases,
 // trailing dots/spaces and other mounts. No FAT symlinks are supported.
 bool exists(const std::string& p) {
     struct stat st{};
@@ -44,18 +45,30 @@ std::string normalized(const std::string& p) {
                p[start]==' ' || p[i-1]==' ') return {};
             start=i+1;
         } else {
-            char c=p[i];
-            if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||
+            const auto c=static_cast<unsigned char>(p[i]);
+            if(c==0xc3 && i+1<p.size()) {
+                const auto tail=static_cast<unsigned char>(p[i+1]);
+                if(tail<0x80 || tail>0xbf || tail==0x97 || tail==0xb7) return {};
+                ++i;
+            } else if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||
                  c==' '||c=='_'||c=='-'||c=='.'||c=='('||c==')'||c=='['||c==']')) return {};
         }
     }
     struct stat st{};
-    auto parent=p.substr(0,p.find_last_of('/')+1);
+    const auto slash=p.find_last_of('/');
+    auto parent=p.substr(0,slash==3?4:slash);
     if(stat(parent.c_str(),&st)!=0 || !S_ISDIR(st.st_mode)) return {};
     return p;
 }
 std::string pathKey(std::string p) {
-    for(char& c:p) if(c>='A'&&c<='Z') c=char(c-'A'+'a');
+    for(size_t i=0;i<p.size();++i) {
+        auto c=static_cast<unsigned char>(p[i]);
+        if(c>='A'&&c<='Z') p[i]=char(c-'A'+'a');
+        else if(c==0xc3 && i+1<p.size()) {
+            auto tail=static_cast<unsigned char>(p[++i]);
+            if(tail>=0x80 && tail<=0x9e && tail!=0x97) p[i]=char(tail+0x20);
+        }
+    }
     return p;
 }
 #else
@@ -254,12 +267,15 @@ std::unique_ptr<ReviewedTransfer> ReviewedTransfer::create(
     BoxSlot from,BoxSlot to,std::string& error,std::vector<std::string>& notes) {
     error.clear(); notes.clear();
     auto s=normalized(source),d=normalized(destination);
-    if(s.empty()||d.empty()||pathKey(s)==pathKey(d)||
-       expectedSource.empty()||expectedDestination.empty()||
-       expectedSource.size()>maxSave||expectedDestination.size()>maxSave||
-       exists(s+".vpt-old")||exists(s+".vpt-new")||
-       exists(d+".vpt-old")||exists(d+".vpt-new")) {
-        error="Save path or existing transaction conflict"; return nullptr;
+    if(s.empty()) {error="Unsupported source save path";return nullptr;}
+    if(d.empty()) {error="Unsupported destination save path";return nullptr;}
+    if(pathKey(s)==pathKey(d)) {error="Source and destination alias";return nullptr;}
+    if(expectedSource.empty()||expectedDestination.empty()||
+       expectedSource.size()>maxSave||expectedDestination.size()>maxSave) {
+        error="Unsupported save size";return nullptr;
+    }
+    for(const auto& p:{s+".vpt-old",s+".vpt-new",d+".vpt-old",d+".vpt-new"}) {
+        if(exists(p)) {error="Existing sidecar or stat failure: "+p;return nullptr;}
     }
     if(!exact(s,expectedSource)||!exact(d,expectedDestination)) {
         error="Selected save changed; restart preview"; return nullptr;
