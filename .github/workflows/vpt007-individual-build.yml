@@ -1,0 +1,51 @@
+name: VPT007 individual test build
+on:
+  push:
+    branches: ['test/vpt007-individual-build']
+    paths: ['.github/workflows/vpt007-individual-build.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build pinned candidate and seal individual test copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          command -v openssl
+          cat >> experiments/pccs/build_arm9_probe.sh <<'SEAL'
+          test -s PKTool.nds
+          mkdir -p "$GITHUB_WORKSPACE/sealed-test"
+          out="$GITHUB_WORKSPACE/sealed-test"
+          cat > "$work/recipient.pem" <<'PUBKEY'
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv4ttPYKtZOTRSa7yMag6
+          6uImEWstZB3ojJaIe/eyKE7NAZ75cABIWWy3VjMTErQ7Pv5E/RqvcppX4ORJHjkw
+          TLadSJuGPh1UzucwXl4jRtgTocYWEi0FxBhg4jq7g2itCFXulKSqdtYA9Jvwa3zB
+          S5O8tgqEx1zBGtItr0eZcCS5ZkixPB5WkuCsr3zdFvjQSu7CP+AVVaeSBuOwQArR
+          nffLdwajhPJFofTCPo/pk+axkPQ251okedosDNe183XnGtnUPXus19bbFlhxj1+T
+          z9526wHyR9mcOTxugOYTPbqOTfo9LKGrrq0e2a1ju36n+hy0tA2uTYSV4QBXov3E
+          0QIDAQAB
+          -----END PUBLIC KEY-----
+          PUBKEY
+          openssl rand -hex 32 > "$work/session-key"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -pass "file:$work/session-key" -in PKTool.nds -out "$out/PKTool-VPT007.nds.enc"
+          openssl pkeyutl -encrypt -pubin -inkey "$work/recipient.pem" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in "$work/session-key" -out "$out/session-key.enc"
+          sha256sum PKTool.nds | tee "$out/SHA256SUMS.txt"
+          SEAL
+          bash experiments/pccs/build_arm9_probe.sh
+          test ! -e PKTool.nds
+          test ! -e PKTool.elf
+          test -s sealed-test/PKTool-VPT007.nds.enc
+          test -s sealed-test/session-key.enc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VPT007-individual-sealed-test
+          path: sealed-test/
+          retention-days: 1
+          if-no-files-found: error
