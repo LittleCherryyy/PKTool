@@ -1,14 +1,42 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include "core/legality/legality.h"
+#include "core/pokemon/pk2.h"
+#include "core/data/gen12.h"
+#include "core/text/gen12_text.h"
+#include <array>
 #include <string>
 #include <vector>
 
 namespace pktool::pokemon::pccs_bridge {
-// Keep every mismatch visible and fail closed. Only the exact English
-// Gen II in-game trade token may expand into its rendered Gen III name.
+// English Gen II glyph bytes E1 (<PK>) and E2 (<MN>) are displayed
+// as braces by the PKTool GB decoder. The pinned PCCS charset intentionally
+// transcribes them to P/M. Derive that exact expected spelling from raw bytes;
+// never normalize arbitrary strings or ignore suffixes/other changes.
+// The original entity remains unmodified and retained in the save journal.
+inline bool pccsNameGlyphEquivalent(const uint8_t* raw, size_t maxChars,
+                                    const std::string& original, const std::string& target) {
+    if (!raw || maxChars > pk2::kNicknameChars) return false;
+    std::array<uint8_t, pk2::kStringBytes> mapped{};
+    bool changed = false;
+    size_t n = 0;
+    for (; n < pk2::kStringBytes; ++n) {
+        const uint8_t b = raw[n];
+        if (b == 0x50) { mapped[n] = b; break; }
+        if (n >= maxChars || b == 0x5D || data::charGb(2,2,b) == 0xffff) return false;
+        mapped[n] = b == 0xE1 ? 0x8F : b == 0xE2 ? 0x8C : b;
+        changed |= mapped[n] != b;
+    }
+    if (!changed || n == pk2::kStringBytes) return false;
+    return text::decodeGb(2,raw,pk2::kStringBytes,2) == original &&
+           text::decodeGb(2,mapped.data(),pk2::kStringBytes,2) == target;
+}
+// Keep every mismatch visible and fail closed, except exact documented PCCS
+// transcriptions from the original English raw name bytes.
 inline bool checkProtectedIdentity(const Pokemon& a, const Pokemon& b, bool tradeOt,
-                                   std::vector<std::string>& notes) {
+                                   std::vector<std::string>& notes,
+                                   const uint8_t* rawOt = nullptr,
+                                   const uint8_t* rawNickname = nullptr) {
     bool ok = true;
     const auto compare = [&](const char* label, unsigned from, unsigned to) {
         if (from != to) {
@@ -25,6 +53,9 @@ inline bool checkProtectedIdentity(const Pokemon& a, const Pokemon& b, bool trad
         if (tradeOt && a.language == 2 && b.language == 2 &&
             a.trainer.name == "*" && b.trainer.name == "TRAINER") {
             notes.push_back("OT: GB trade token -> TRAINER");
+        } else if (a.language == 2 && b.language == 2 &&
+                   pccsNameGlyphEquivalent(rawOt,pk2::kOtNameChars,a.trainer.name,b.trainer.name)) {
+            notes.push_back("OT: PCCS PK/MN glyphs -> P/M: [" + a.trainer.name + "] -> [" + b.trainer.name + "]");
         } else {
             notes.push_back("OT: [" + a.trainer.name + "] -> [" + b.trainer.name + "]");
             ok = false;
@@ -33,8 +64,13 @@ inline bool checkProtectedIdentity(const Pokemon& a, const Pokemon& b, bool trad
     compare("OT gender", unsigned(a.trainer.gender), unsigned(b.trainer.gender));
     compare("Language", a.language, b.language);
     if (a.nickname != b.nickname) {
-        notes.push_back("Nickname: [" + a.nickname + "] -> [" + b.nickname + "]");
-        ok = false;
+        if (a.language == 2 && b.language == 2 &&
+            pccsNameGlyphEquivalent(rawNickname,pk2::kNicknameChars,a.nickname,b.nickname)) {
+            notes.push_back("Nickname: PCCS PK/MN glyphs -> P/M: [" + a.nickname + "] -> [" + b.nickname + "]");
+        } else {
+            notes.push_back("Nickname: [" + a.nickname + "] -> [" + b.nickname + "]");
+            ok = false;
+        }
     }
     compare("Form", a.form, b.form);
     return ok;

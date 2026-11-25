@@ -70,7 +70,8 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
     // PCCS expands the exact two-byte English token to the displayed TRAINER.
     const bool tradeOt = entity[pk2::kOtOffset] == 0x5D &&
                          entity[pk2::kOtOffset + 1] == 0x50;
-    if (!checkProtectedIdentity(original, target, tradeOt, result.notes)) {
+    if (!checkProtectedIdentity(original, target, tradeOt, result.notes,
+                                entity + pk2::kOtOffset, entity + pk2::kNicknameOffset)) {
         result.error = "Conversion changes protected identity fields";
         return result;
     }

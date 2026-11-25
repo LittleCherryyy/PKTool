@@ -41,6 +41,42 @@ int main() {
     notes.clear();
     if (bridge::checkProtectedIdentity(before,after,true,notes)) return 25;
     std::puts("PASS: all Unown forms and exact identity diagnostics");
+    // Reproduce physical DSi report: Mattia<PK> (0xE1) is displayed as Mattia{
+    // by PKTool and transcribed as MattiaP by the pinned PCCS charset.
+    const std::array<uint8_t,11> rawOt = {0x8c,0xa0,0xb3,0xb3,0xa8,0xa0,0xe1,0x50,0x50,0x50,0x50};
+    const std::array<uint8_t,11> rawNick = {0xe1,0xe2,0x50,0x50,0x50,0x50,0x50,0x50,0x50,0x50,0x50};
+    before = pk::Pokemon{}; after = pk::Pokemon{};
+    before.language = after.language = 2;
+    before.trainer.name = "Mattia{"; after.trainer.name = "MattiaP";
+    before.nickname = "{}"; after.nickname = "PM";
+    notes.clear();
+    if (!bridge::checkProtectedIdentity(before,after,false,notes,rawOt.data(),rawNick.data()) || notes.size()!=2) return 26;
+    auto invalid = after; invalid.trainer.name = "MatTiaP";
+    notes.clear();
+    if (bridge::checkProtectedIdentity(before,invalid,false,notes,rawOt.data(),rawNick.data())) return 27;
+    auto badRaw = rawOt; badRaw[7] = 0x80;
+    notes.clear();
+    if (bridge::checkProtectedIdentity(before,after,false,notes,badRaw.data(),rawNick.data())) return 28;
+    notes.clear();
+    if (bridge::checkProtectedIdentity(before,after,false,notes)) return 29;
+    // Actual PCCS converter, not a synthetic destination model.
+    {
+        pk::create4::Trainer named;
+        named.name = "ASH"; named.tid=12345; named.version=legal::version::kCrystal; named.language=2;
+        auto model = pk::create4::newPokemon(named,155,5,255); model.heldItem=0;
+        std::array<uint8_t,pk::entity::kMaxPartySize> raw{};
+        pk::create4::encode(model,raw.data());
+        std::memcpy(raw.data()+pk::pk2::kOtOffset,rawOt.data(),rawOt.size());
+        const auto saved = raw;
+        const auto p = bridge::previewCrystalToRuby(raw.data(),pk::pk2::kEntitySize);
+        if (!p.ok) {
+            std::printf("FAIL: physical OT regression: %s\n",p.error.c_str());
+            for (const auto& note:p.notes) std::printf("  %s\n",note.c_str());
+            return 30;
+        }
+        if (raw != saved || pk::pk3::toPokemon(p.data.data(),p.data.size()).trainer.name != "MattiaP") return 31;
+    }
+    std::puts("PASS: exact raw PK/MN glyph policy and actual PCCS OT regression");
     // Regression: allow only the exact non-invalid, expected PCCS warning.
     pk::Pokemon policyPokemon;
     policyPokemon.format = 3;
