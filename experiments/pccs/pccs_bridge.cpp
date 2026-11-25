@@ -27,6 +27,7 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
     const auto original = pk2::toPokemon(entity, size);
     const auto sourceReport = pktool::legality::checkGen2(original);
     if (sourceReport.overall() != pktool::legality::Severity::Valid) {
+        for (const auto& finding : sourceReport.findings) result.notes.push_back(finding.text);
         result.error = "Source legality cannot be confirmed";
         return result;
     }
@@ -52,6 +53,7 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
     if (target.species != original.species || target.isEgg ||
         target.shiny != original.shiny || target.gender != original.gender ||
         target.trainer.tid != original.trainer.tid || target.trainer.name != original.trainer.name ||
+        target.trainer.gender != original.trainer.gender || target.language != original.language ||
         target.nickname != original.nickname || target.form != original.form) {
         result.error = "Conversion changes protected identity fields";
         return result;

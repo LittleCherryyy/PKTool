@@ -30,3 +30,6 @@ c++ -std=c++17 -Wall -Wextra -Werror experiments/pccs/test_preflight.cpp -o /tmp
 /tmp/vpt001-preflight
 ```
 Only the preflight test is standalone. The converter itself has not yet been compiled against PCCS or tested for conversion correctness.
+
+## VPT002 host conversion probe
+The independent VPT002 workflow fetches the exact PCCS pin into the ephemeral runner, builds its host library and PKTool's portable core, then executes three synthetic English Crystal starter fixtures through the actual LEGAL API and strict adapter. It checks encrypted PK3 serialization, decoded checksum and identity, independent legality checks, rejection of eggs, and source immutability. Any refusal is a test failure, not a reason to relax legality. The job uploads no PCCS code or linked binaries. This is a test candidate until the job passes; no hardware or save transfer claims.

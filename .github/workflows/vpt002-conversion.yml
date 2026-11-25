@@ -1,0 +1,32 @@
+name: VPT002 PCCS conversion probe
+on:
+  push:
+    branches: ['dev/vpt001-pccs']
+    paths: ['experiments/pccs/**', '.github/workflows/vpt002-conversion.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host-conversion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fetch pinned upstream library (test-only, no distribution)
+        run: |
+          git clone --no-checkout https://github.com/Striaton-Lab-Team/Pokemon-Community-Conversion-Standard.git "$RUNNER_TEMP/pccs"
+          git -C "$RUNNER_TEMP/pccs" checkout --detach 9cd6bc9bd1250013ceb1b1a70d96569985a87543
+          test "$(git -C "$RUNNER_TEMP/pccs" rev-parse HEAD)" = 9cd6bc9bd1250013ceb1b1a70d96569985a87543
+      - name: Build upstream host library and data tables
+        run: make -C "$RUNNER_TEMP/pccs" -j2
+      - name: Build PKTool portable core
+        run: |
+          cmake -S . -B build-vpt -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-vpt --target pktool_core -j2
+      - name: Compile real read-only conversion probe
+        run: |
+          c++ -std=c++17 -O2 -Wall -Wextra -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \
+            experiments/pccs/pccs_bridge.cpp experiments/pccs/test_conversion.cpp \
+            build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt002"
+      - name: Run conversion and legality tests (bounded time)
+        run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt002"
