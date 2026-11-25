@@ -753,6 +753,11 @@ bool App::updateFrame(const Input& rawInput) {
         return true;
     }
     switch (screen_) {
+#ifdef VPT_TRANSPORTER_PREVIEW
+        case Screen::Transporter:
+            updateTransporter(in);
+            break;
+#endif
         case Screen::Home:
             return updateHome(in);
         case Screen::Browser:
@@ -916,6 +921,9 @@ void App::runPending() {
 
 const char* App::screenName() const {
     switch (screen_) {
+#ifdef VPT_TRANSPORTER_PREVIEW
+        case Screen::Transporter: return "Transporter";
+#endif
         case Screen::Home: return "Home";
         case Screen::Browser: return "Browser";
         case Screen::SaveMenu: return "SaveMenu";
@@ -1024,6 +1032,12 @@ void App::updateDialog(const Input& in) {
 }
 
 bool App::updateHome(const Input& in) {
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if (config_.transporterPreview && (in.pressed & kKeyY)) {
+        openTransporter();
+        return true;
+    }
+#endif
     constexpr int kTiles = 4;
     int zone = in.touched ? touchedZone(in) : -1;
     bool activate = in.pressed & kKeyA;
@@ -2325,6 +2339,11 @@ void App::draw(Canvas& top, Canvas& bottom) {
     top.resetClip();
     bottom.resetClip();
     switch (screen_) {
+#ifdef VPT_TRANSPORTER_PREVIEW
+        case Screen::Transporter:
+            drawTransporter(top, bottom);
+            break;
+#endif
         case Screen::Home:
             drawHome(top, bottom);
             break;
@@ -2858,6 +2877,13 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
         bottom.text(kFontSmall, x, y + 61, w, Align::Center, tiles[i].caption, disabled ? kDim : kMuted);
         zones_.push_back({x, y, w, h, kZoneItem + i});
     }
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if (config_.transporterPreview) {
+        top.text(kFontSmall, 0, 159, 256, Align::Center, "Y: Poke Transporter (preview)", kAccent);
+        drawHints(bottom, {{"A", "Open"}, {"Y", "Transporter"}, {"START", "Exit"}}, {kKeyA, kKeyY, kKeyStart});
+        return;
+    }
+#endif
     drawHints(bottom, {{"A", "Open"}, {"+", "Move"}, {"START", "Exit"}}, {kKeyA, 0, kKeyStart});
 }
 

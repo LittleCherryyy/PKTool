@@ -70,6 +70,9 @@ struct Config {
     // Free heap in bytes (DS only; null elsewhere). Shown in the About box.
     size_t (*freeMemory)() = nullptr;
     std::string version = "1.1.0";
+#ifdef VPT_TRANSPORTER_PREVIEW
+    bool transporterPreview = false;
+#endif
 };
 
 class App {
@@ -104,7 +107,11 @@ public:
     void setAnimations(bool on) { settings_.animations = on; }
 
 private:
-    enum class Screen : uint8_t { Home, Browser, SaveMenu, Box, Edit, Backups, Picker, Bank, Keyboard, Trainer, Bag, ItemPicker, Ribbons, Settings };
+    enum class Screen : uint8_t { Home, Browser, SaveMenu, Box, Edit, Backups, Picker, Bank, Keyboard, Trainer, Bag, ItemPicker, Ribbons, Settings
+#ifdef VPT_TRANSPORTER_PREVIEW
+        , Transporter
+#endif
+    };
     enum class KeyboardTarget : uint8_t { Nickname, BoxName, TrainerName, BankBoxName, BankSearch, OtName };
     // What the Bank screen shows on the bottom screen (bank_ui.cpp).
     enum class BankMode : uint8_t { Browse, Menu, SortKey, Filters, Results };
@@ -155,6 +162,24 @@ private:
     void updateBag(const Input& in);
     void updateItemPicker(const Input& in);
     void updateSettings(const Input& in);
+#ifdef VPT_TRANSPORTER_PREVIEW
+    void openTransporter();
+    void updateTransporter(const Input& in);
+    void drawTransporter(gfx::Canvas& top, gfx::Canvas& bottom);
+    void transporterSelectSave(bool source);
+    void transporterPreview();
+    enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review };
+    TransportPhase transportPhase_ = TransportPhase::Source;
+    std::vector<saves::SaveSummary> transportSaves_;
+    std::unique_ptr<saves::SaveFile> transportSave_;
+    std::vector<uint8_t> transportSourceBytes_;
+    std::string transportSource_, transportDest_, transportMessage_;
+    std::vector<std::string> transportRows_, transportNotes_;
+    std::vector<std::pair<int,int>> transportPositions_;
+    int transportCursor_ = 0, transportScroll_ = 0;
+    int transportFromBox_ = 0, transportFromSlot_ = 0;
+    bool transportAccepted_ = false;
+#endif
     void updateDialog(const Input& in);
     int touchedZone(const Input& in) const;
 
