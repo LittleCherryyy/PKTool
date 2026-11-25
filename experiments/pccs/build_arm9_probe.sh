@@ -3,7 +3,10 @@
 set -euo pipefail
 : "${DEVKITARM:?devkitARM is required}"
 work="$(mktemp -d)"
-trap 'rm -rf "$work"; rm -f PKTool.nds PKTool.elf' EXIT
+trap 'rm -rf "$work"; if [ "${VPT_KEEP_LOCAL:-0}" != 1 ] || [ "${CI:-}" = true ]; then rm -f PKTool.nds PKTool.elf; fi' EXIT
+if [ "${VPT_KEEP_LOCAL:-0}" = 1 ] && [ "${CI:-}" = true ]; then
+    echo "Local output is disabled in CI"; exit 1
+fi
 pin=9cd6bc9bd1250013ceb1b1a70d96569985a87543
 git clone --no-checkout https://github.com/Striaton-Lab-Team/Pokemon-Community-Conversion-Standard.git "$work/pccs"
 git -C "$work/pccs" checkout --detach "$pin"
@@ -42,7 +45,7 @@ p = pathlib.Path("ds/main.cpp")
 s = p.read_text()
 a = "int main() {"
 assert s.count(a) == 1
-p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("ui::Config config;", "ui::Config config;\n    config.transporterPreview = isDSiMode();\n    config.version = \"VPT007-candidate\";"))
+p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("config.storageReady = fatInitDefault();", "config.storageReady = fatInitDefault();\n    config.transporterPreview = isDSiMode();\n    if (config.transporterPreview) {\n        config.scanRoot = \"sd:/\";\n        config.dataDir = \"sd:/PKTOOL\";\n    }\n    config.version = \"VPT007-candidate\";"))
 pathlib.Path("ds/vpt_arm9_bridge.cpp").write_text('#include "../experiments/pccs/pccs_bridge.cpp"\n')
 pathlib.Path("ds/vpt_arm9_stage.cpp").write_text('#include "../experiments/pccs/stage_transfer.cpp"\n')
 pathlib.Path("ds/vpt_arm9_journal.cpp").write_text('#include "../experiments/pccs/transfer_journal.cpp"\n')
