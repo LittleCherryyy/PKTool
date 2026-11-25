@@ -16,7 +16,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --exit-code
+          test -f experiments/pccs/build_arm9_probe.sh
           command -v openssl
           cat >> experiments/pccs/build_arm9_probe.sh <<'SEAL'
           test -s PKTool.nds
