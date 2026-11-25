@@ -30,3 +30,10 @@ jobs:
             build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt002"
       - name: Run conversion and legality tests (bounded time)
         run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt002"
+      - name: Compile staged save transfer test
+        run: |
+          c++ -std=c++17 -O2 -Wall -Wextra -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \
+            experiments/pccs/pccs_bridge.cpp experiments/pccs/stage_transfer.cpp experiments/pccs/test_stage_transfer.cpp \
+            build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt004"
+      - name: Test in-memory Crystal and Ruby save round-trip
+        run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt004"

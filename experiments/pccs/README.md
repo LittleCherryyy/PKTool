@@ -1,4 +1,4 @@
-# PKTool PCCS — VPT001
+# PKTool PCCS — experimental development
 
 Independent PKTool fork, not part of Pokewalker Virtual or Virtual Slot-2.
 Initial target: original English Pokemon Crystal to original English Pokemon Ruby, on Nintendo DSi with internal SD. Keep all original PKTool functionality.
@@ -29,7 +29,7 @@ Run from repository root:
 c++ -std=c++17 -Wall -Wextra -Werror experiments/pccs/test_preflight.cpp -o /tmp/vpt001-preflight
 /tmp/vpt001-preflight
 ```
-Only the preflight test is standalone. The converter itself has not yet been compiled against PCCS or tested for conversion correctness.
+Only the preflight test is standalone. The VPT002 workflow compiles and exercises the pinned converter.
 
 ## VPT002 host conversion probe
 The independent VPT002 workflow fetches the exact PCCS pin into the ephemeral runner, builds its host library and PKTool's portable core, then executes three synthetic English Crystal starter fixtures through the actual LEGAL API and strict adapter. It checks encrypted PK3 serialization, decoded checksum and identity, independent legality checks, rejection of eggs, and source immutability. Any refusal of these fixtures is a test failure; preserve all independent legality findings. The job uploads no PCCS code or linked binaries. This is a test candidate until the job passes; no hardware or save transfer claims.
@@ -42,3 +42,10 @@ The independent VPT002 workflow fetches the exact PCCS pin into the ephemeral ru
 
 ## VPT003 ARM9 build-only probe
 The dedicated workflow compiles the pinned PCCS source for ARMv5TE using uncompressed generated tables, then links the read-only probe with the full PKTool application in a disposable CI checkout. It checks that the actual conversion symbols survive linker garbage collection and reports sizes. The normal source and CI build remain unchanged. The linked binary and dependency are not uploaded or distributed pending license clarification. A successful build does not establish runtime compatibility, random number initialization, ARM9 stack/heap safety, or save integrity on hardware. No write path is enabled.
+
+## Verified milestones
+- VPT002: [3/3 synthetic conversions and eight policy assertions passed](https://github.com/LittleCherryyy/PKTool/actions/runs/45595327112).
+- VPT003: [ARM9 build-only probe passed](https://github.com/LittleCherryyy/PKTool/actions/runs/45595436447), text 1923860, data 12592, bss 226492 bytes. No execution on hardware.
+
+## VPT004 staged save images
+Host-only integration candidate. Reads two complete immutable save images, validates supported family and language, checks explicit box positions, converts using PCCS LEGAL, stages destination and reloads it before staging removal from the source. Verifies exact destination bytes, logical source box compaction, other boxes, party and trainer identity after reload. No disk IO and no actual transaction: a later journal must bind the exact source/destination files and guarantee recoverable destination-first persistence. Ruby and Sapphire share a save format, and language inference is imperfect; actual ROM edition/language must be verified by the caller. The current experiment is not linked into the DS UI and has not yet passed CI.
