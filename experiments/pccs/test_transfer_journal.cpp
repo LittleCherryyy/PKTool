@@ -54,7 +54,7 @@ int main() {
                    br::StopPoint::DestinationWritten,br::StopPoint::SourceMoved}) {
         std::string folder=prefix+"/"+std::to_string(n++);
         REQUIRE(fs::create_directory(folder));
-        auto a=folder+"/crystal.sav",b=folder+"/ruby.sav",j=folder+"/transfer.vpt";
+        auto a=folder+"/Pok\xC3\xA9mon - Crystal Version.sav",b=folder+"/Pok\xC3\xA9mon - Ruby Version.sav",j=folder+"/transfer.vpt";
         REQUIRE(writeFixture(a,sb)&&writeFixture(b,db));
         auto prep=br::prepareJournal(j,a,b,{0,0},{0,0});
         if(prep.status!=br::JournalStatus::Complete) std::fprintf(stderr,"%s\n",prep.message.c_str());
@@ -102,7 +102,19 @@ int main() {
     REQUIRE(br::prepareJournal("sd:/../escape.vpt",a,b,{0,0},{0,0}).status==br::JournalStatus::Conflict);
     REQUIRE(br::prepareJournal("sd:/ALIAS~1.VPT",a,b,{0,0},{0,0}).status==br::JournalStatus::Conflict);
     REQUIRE(br::prepareJournal("sd:/conflict/CRYSTAL.SAV",a,b,{0,0},{0,0}).status==br::JournalStatus::Conflict);
-    std::puts("PASS: FAT path policy (host simulation)");
+    std::string accent=prefix+"/Pok\xC3\xA9mon";
+    REQUIRE(fs::create_directory(accent));
+    auto ga=accent+"/Pok\xC3\xA9mon - Crystal.sav";
+    auto gb=accent+"/Pok\xC3\xA9mon - Ruby.sav";
+    auto gj=accent+"/active.vpt";
+    REQUIRE(writeFixture(ga,sb)&&writeFixture(gb,db));
+    REQUIRE(br::prepareJournal(accent+"/POK\xC3\x89MON - CRYSTAL.SAV",ga,gb,{0,0},{0,0}).status==br::JournalStatus::Conflict);
+    REQUIRE(br::prepareJournal(accent+"/bad\xC0\xAF.vpt",ga,gb,{0,0},{0,0}).status==br::JournalStatus::Conflict);
+    REQUIRE(br::prepareJournal(gj,ga,gb,{0,0},{0,0}).status==br::JournalStatus::Complete);
+    REQUIRE(br::recoverActiveJournal(gj).status==br::JournalStatus::Complete);
+    REQUIRE(br::archiveActiveJournal(gj).status==br::JournalStatus::Complete);
+    REQUIRE(br::inspectActiveJournal(gj).state==br::StartupState::Clear);
+    std::puts("PASS: accented FAT paths, alias and malformed UTF-8 rejection");
 #endif
     std::puts("PASS: four completion/recovery cases, path mismatch, edited destination, corrupt journal and idempotence");
     return 0;
