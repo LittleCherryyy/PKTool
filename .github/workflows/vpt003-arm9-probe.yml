@@ -1,0 +1,17 @@
+name: VPT003 ARM9 build-only probe
+on:
+  push:
+    branches: ['dev/vpt001-pccs']
+    paths: ['experiments/pccs/build_arm9_probe.sh', 'experiments/pccs/arm9_probe.cpp', '.github/workflows/vpt003-arm9-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  arm9:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and link ARM9 probe in disposable checkout
+        run: bash experiments/pccs/build_arm9_probe.sh
