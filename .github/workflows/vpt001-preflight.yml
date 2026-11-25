@@ -1,0 +1,17 @@
+name: VPT001 read-only preflight
+on:
+  push:
+    branches: ['dev/vpt001-pccs']
+    paths: ['experiments/pccs/**', '.github/workflows/vpt001-preflight.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compile and test synthetic input gates
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -fsanitize=undefined experiments/pccs/test_preflight.cpp -o /tmp/vpt001-preflight
+          /tmp/vpt001-preflight

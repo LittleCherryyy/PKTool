@@ -1,3 +1,5 @@
+> **Development fork: PKTool PCCS (VPT001).** An experimental, unofficial Generation II to III bridge using the PCCS LEGAL method is being developed here. See [development status and scope](experiments/pccs/README.md). This branch does not yet enable conversions. Original PKTool documentation follows.
+
 <h1 align="center">PKTool</h1>
 
 <p align="center">
