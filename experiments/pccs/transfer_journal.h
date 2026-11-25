@@ -7,11 +7,21 @@ namespace pktool::pokemon::pccs_bridge {
 // POSIX and experimental internal-SD FAT backend. Single writer only.
 // No other application may open/modify the selected saves during recovery.
 enum class StopPoint { None, DestinationMoved, DestinationWritten, SourceMoved };
+// Inspect a single fixed active journal before opening the normal editor.
+// A partially created journal is blocked, not treated as an empty session.
+enum class StartupState { Clear, Pending, Completed, Blocked };
+struct StartupReview {
+    StartupState state = StartupState::Blocked;
+    std::string source, destination, message;
+};
+StartupReview inspectActiveJournal(const std::string& journal);
 enum class JournalStatus { Complete, Interrupted, Conflict, IoError, InvalidJournal };
 struct JournalResult {
     JournalStatus status;
     std::string message;
 };
+// Explicit recovery only. Read paths from the validated fixed journal.
+JournalResult recoverActiveJournal(const std::string& journal);
 // Opaque reviewed transfer: only the factory can construct a conversion.
 class ReviewedTransfer {
 public:

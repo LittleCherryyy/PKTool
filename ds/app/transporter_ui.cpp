@@ -23,7 +23,42 @@ std::string slotLabel(int box,int slot) {
     return "B"+twoDigits(box+1)+" S"+twoDigits(slot+1);
 }
 }
+std::string App::activeTransferPath() const {
+    std::string p=io::joinPath(io::joinPath(config_.dataDir,"transporter"),"active.vpt");
+#ifdef ARM9
+    if(!p.empty()&&p[0]=='/') p="sd:"+p;
+#endif
+    return p;
+}
+bool App::refreshTransferGate() {
+    using pokemon::pccs_bridge::StartupState;
+    transferStartup_=pokemon::pccs_bridge::inspectActiveJournal(activeTransferPath());
+    if(transferStartup_.state==StartupState::Clear) {
+        if(screen_==Screen::TransferRecovery) screen_=Screen::Home;
+        return true;
+    }
+    screen_=Screen::TransferRecovery;
+    redraw_=true;
+    return false;
+}
+void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
+    drawChrome(top,"Poke Transporter","RECOVERY",kYellow);
+    top.roundRect(5,kBodyTop+3,246,136,kBorder,kPanel);
+    top.text(kFontLarge,8,45,240,Align::Center,"Transfer locked",kYellow);
+    top.text(kFontSmall,8,68,240,Align::Center,Canvas::ellipsize(kFontSmall,transferStartup_.message,240),kText);
+    top.text(kFontSmall,8,87,240,Align::Left,Canvas::ellipsize(kFontSmall,"From: "+transferStartup_.source,240),kMuted);
+    top.text(kFontSmall,8,101,240,Align::Left,Canvas::ellipsize(kFontSmall,"To: "+transferStartup_.destination,240),kMuted);
+    top.text(kFontSmall,8,124,240,Align::Center,"Do not open either save in a game.",kYellow);
+    top.text(kFontSmall,8,140,240,Align::Center,"Keep journal and sidecar files.",kMuted);
+    bottom.clear(kBackground);
+    bottom.text(kFontLarge,0,44,256,Align::Center,"Editor blocked",kText);
+    bottom.text(kFontSmall,0,70,256,Align::Center,"Read-only recovery inspection",kMuted);
+    bottom.text(kFontSmall,0,102,256,Align::Center,"A: Recheck journal",kText);
+    bottom.text(kFontSmall,0,120,256,Align::Center,"START: Exit",kText);
+    bottom.text(kFontSmall,0,148,256,Align::Center,"Recovery writes not enabled in this build",kYellow);
+}
 void App::openTransporter() {
+    if(!refreshTransferGate()) return;
     if (!config_.storageReady) { showMessage("Transporter","SD card unavailable."); return; }
     // Home only: release large cached state before loading two save images.
     if(save_ || bankDirty_ || !bankWithdrawn_.empty()) {

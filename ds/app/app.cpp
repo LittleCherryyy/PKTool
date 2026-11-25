@@ -671,6 +671,9 @@ App::App(Config config)
     }
     setSaved_ = settings_;
     data::setOrder(settings_.sortById ? data::Order::ById : data::Order::Alphabetical);
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(config_.transporterPreview && config_.storageReady) refreshTransferGate();
+#endif
 }
 
 std::string App::backupDir() const {
@@ -729,6 +732,14 @@ int App::bobOffset() const {
 }
 
 bool App::updateFrame(const Input& rawInput) {
+#ifdef VPT_TRANSPORTER_PREVIEW
+    // Recovery is modal, before pending writes, touch routing or any editor action.
+    if(screen_==Screen::TransferRecovery) {
+        if(rawInput.pressed&kKeyStart) return false;
+        if(rawInput.pressed&kKeyA) {refreshTransferGate();redraw_=true;}
+        return true;
+    }
+#endif
     if (pending_ != Pending::None) {
         runPending();
         redraw_ = true;
@@ -754,6 +765,7 @@ bool App::updateFrame(const Input& rawInput) {
     }
     switch (screen_) {
 #ifdef VPT_TRANSPORTER_PREVIEW
+        case Screen::TransferRecovery: break;
         case Screen::Transporter:
             updateTransporter(in);
             break;
@@ -922,6 +934,7 @@ void App::runPending() {
 const char* App::screenName() const {
     switch (screen_) {
 #ifdef VPT_TRANSPORTER_PREVIEW
+        case Screen::TransferRecovery: return "TransferRecovery";
         case Screen::Transporter: return "Transporter";
 #endif
         case Screen::Home: return "Home";
@@ -943,6 +956,9 @@ const char* App::screenName() const {
 }
 
 bool App::openSave(const std::string& path) {
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(config_.transporterPreview && config_.storageReady && !refreshTransferGate()) return false;
+#endif
     // Free the previous save first: two saves at once are 1 MB of the DS heap.
     // A failure below then goes back to the browser: no screen can use a save
     // that is gone.
@@ -2340,6 +2356,9 @@ void App::draw(Canvas& top, Canvas& bottom) {
     bottom.resetClip();
     switch (screen_) {
 #ifdef VPT_TRANSPORTER_PREVIEW
+        case Screen::TransferRecovery:
+            drawTransferRecovery(top,bottom);
+            break;
         case Screen::Transporter:
             drawTransporter(top, bottom);
             break;

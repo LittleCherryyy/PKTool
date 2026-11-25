@@ -112,7 +112,7 @@ public:
 private:
     enum class Screen : uint8_t { Home, Browser, SaveMenu, Box, Edit, Backups, Picker, Bank, Keyboard, Trainer, Bag, ItemPicker, Ribbons, Settings
 #ifdef VPT_TRANSPORTER_PREVIEW
-        , Transporter
+        , Transporter, TransferRecovery
 #endif
     };
     enum class KeyboardTarget : uint8_t { Nickname, BoxName, TrainerName, BankBoxName, BankSearch, OtName };
@@ -167,6 +167,10 @@ private:
     void updateSettings(const Input& in);
 #ifdef VPT_TRANSPORTER_PREVIEW
     void openTransporter();
+    std::string activeTransferPath() const;
+    bool refreshTransferGate();
+    void drawTransferRecovery(gfx::Canvas& top,gfx::Canvas& bottom);
+    pokemon::pccs_bridge::StartupReview transferStartup_;
     void updateTransporter(const Input& in);
     void drawTransporter(gfx::Canvas& top, gfx::Canvas& bottom);
     void transporterSelectSave(bool source);

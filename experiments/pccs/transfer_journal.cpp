@@ -306,4 +306,49 @@ JournalResult resumeJournal(const std::string& journal,const std::string& source
     // them and provide explicit recovery before a new transaction.
     return result(Status::Complete,"Both saves verified; original backups retained");
 }
+StartupReview inspectActiveJournal(const std::string& journal) {
+    StartupReview out;
+    if(journal.empty()) {out.message="Invalid active journal path";return out;}
+    // The application supplies a fixed, absolute internal SD path. A missing
+    // journal directory on a fresh installation is normal; other stat errors
+    // are deliberately treated as present by exists().
+    if(!exists(journal) && !exists(journal+".new")) {
+        out.state=StartupState::Clear;out.message="No active transfer";return out;
+    }
+    auto j=normalized(journal);
+    if(j.empty()||exists(j+".new")) {
+        out.message="Incomplete journal creation; retain all files";return out;
+    }
+    Bytes bytes;Record r;
+    if(!readBounded(j,bytes,maxJournal)||!decode(bytes,r)) {
+        out.message="Active journal unreadable or corrupt";return out;
+    }
+    auto s=normalized(r.source),d=normalized(r.dest);
+    if(!distinct(j,s,d)||s!=r.source||d!=r.dest) {
+        out.message="Invalid recorded save paths";return out;
+    }
+    out.source=s;out.destination=d;
+    auto ss=state(s,r.sb,r.sa),ds=state(d,r.db,r.da);
+    if(ss==State::Conflict||ds==State::Conflict||
+       (ss!=State::Before&&ds!=State::After)) {
+        out.message="Save or sidecar conflict; no writes allowed";return out;
+    }
+    if(ss==State::After&&ds==State::After) {
+        out.state=StartupState::Completed;
+        out.message="Transfer complete; archive required";
+    } else {
+        out.state=StartupState::Pending;
+        out.message="Transfer pending; recovery required";
+    }
+    return out;
+}
+JournalResult recoverActiveJournal(const std::string& journal) {
+    auto review=inspectActiveJournal(journal);
+    if(review.state==StartupState::Completed)
+        return result(Status::Complete,"Transfer already complete");
+    if(review.state!=StartupState::Pending)
+        return {Status::Conflict,review.message};
+    return resumeJournal(journal,review.source,review.destination);
+}
+
 }
