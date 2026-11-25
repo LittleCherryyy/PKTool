@@ -28,7 +28,13 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
     const auto original = pk2::toPokemon(entity, size);
     const auto sourceReport = pktool::legality::checkGen2(original);
     if (sourceReport.overall() != pktool::legality::Severity::Valid) {
-        for (const auto& finding : sourceReport.findings) result.notes.push_back(finding.text);
+        result.notes.push_back("Species: "+std::to_string(original.species)+" Lv"+std::to_string(original.level));
+        result.notes.push_back("Met: "+std::to_string(original.met.metLocation)+" Lv"+std::to_string(original.met.metLevel)+" time "+std::to_string(original.met.encounterType));
+        for (const auto& finding : sourceReport.findings)
+            if(finding.severity != legality::Severity::Valid)
+                result.notes.push_back(std::string(finding.severity==legality::Severity::Invalid?"ERROR: ":"WARN: ")+finding.text);
+        for (const auto& finding : sourceReport.findings)
+            if(finding.severity == legality::Severity::Valid) result.notes.push_back(finding.text);
         result.error = "Source legality cannot be confirmed";
         return result;
     }

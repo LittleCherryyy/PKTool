@@ -149,3 +149,21 @@ TEST(gb_legality_gen2_eggs_and_shiny_statics) {
     CHECK(gyarados.shiny);
     CHECK(legality::check(viaEntity(gyarados)).legal());
 }
+
+TEST(crystal_hatched_egg_locations_are_not_limited_to_goldenrod) {
+    auto p = pokemon::create4::newPokemon(trainerFor(41), 172, 5, 11);
+    p.isEgg = false;
+    p.met.metLevel = 1;
+    p.met.encounterType = 2;
+    for (uint8_t loc : {1, 16, 38, 95}) {
+        p.met.metLocation = loc;
+        auto q = viaEntity(p);
+        auto r = legality::checkGen2(q);
+        CHECK(r.overall() == legality::Severity::Valid);
+    }
+    p.met.metLocation = 96;
+    CHECK(legality::checkGen2(viaEntity(p)).overall() != legality::Severity::Valid);
+    p.met.metLocation = 16;
+    p.met.metLevel = 2;
+    CHECK(legality::checkGen2(viaEntity(p)).overall() != legality::Severity::Valid);
+}

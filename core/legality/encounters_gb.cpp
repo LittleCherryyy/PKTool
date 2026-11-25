@@ -447,7 +447,12 @@ void analyse(const pokemon::Pokemon& p, Analysis& a) {
                     continue;
                 }
             } else if (c.source == Source::Egg) {
-                if (p.isEgg || p.met.metLocation != kHatchLocationCrystal || p.met.metLevel != 1) continue;
+                // Crystal records the actual hatch location, not necessarily
+                // Goldenrod. Level 1 is the stored hatch marker (actual level 5).
+                // See PKHeX EncounterVerifier.VerifyEncounterEgg2.
+                if (p.met.metLevel != 1 ||
+                    (p.isEgg ? p.met.metLocation != 0 :
+                     (p.met.metLocation == 0 || p.met.metLocation > 95))) continue;
             } else if (c.source == Source::Trade) {
                 if (p.met.metLocation != kTradeLocationCrystal || p.met.metLevel != 0) continue;
                 if (c.row >= 0 && c.row < generated::kTrades2Count && generated::kTrades2[c.row].dvs != 0xFFFF &&
