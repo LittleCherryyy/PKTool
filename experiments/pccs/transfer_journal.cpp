@@ -195,6 +195,31 @@ bool decode(const Bytes& b,Record& r) {
     for(auto x:{&r.sb,&r.db,&r.sa,&r.da}) if(!getField(b,p,*x,maxSave)) return false;
     return p==end && r.sb.size()==r.sa.size() && r.db.size()==r.da.size() && r.sb!=r.sa && r.db!=r.da;
 }
+// Deterministic name from the record payload, not its appended CRC.
+std::string archivePath(const std::string& j,const Bytes& bytes) {
+    return j+".archive-"+std::to_string(crc(bytes.data(),bytes.size()-4));
+}
+bool archiveDistinct(const std::string& j,const Record& r,const std::string& a) {
+    auto key=pathKey(a);
+    for(const auto& p:{j,j+".new",r.source,r.source+".vpt-old",r.source+".vpt-new",
+                      r.dest,r.dest+".vpt-old",r.dest+".vpt-new"})
+        if(key==pathKey(p)) return false;
+    return normalized(a)==a;
+}
+bool archiveReady(const std::string& j,const Bytes& bytes,const Record& r) {
+    auto a=archivePath(j,bytes);
+    return archiveDistinct(j,r,a)&&exact(a,bytes);
+}
+bool completedImages(const Record& r,bool archived) {
+    if(!exact(r.source,r.sa)||!exact(r.dest,r.da)||
+       exists(r.source+".vpt-new")||exists(r.dest+".vpt-new")) return false;
+    for(const auto& p:{std::make_pair(r.source+".vpt-old",&r.sb),
+                       std::make_pair(r.dest+".vpt-old",&r.db)}) {
+        if(exists(p.first)) {if(!exact(p.first,*p.second)) return false;}
+        else if(!archived) return false;
+    }
+    return true;
+}
 enum class State { Before, Moved, After, Conflict };
 State state(const std::string& path,const Bytes& before,const Bytes& after) {
     const auto old=path+".vpt-old", next=path+".vpt-new";
@@ -328,6 +353,13 @@ StartupReview inspectActiveJournal(const std::string& journal) {
         out.message="Invalid recorded save paths";return out;
     }
     out.source=s;out.destination=d;
+    // Archive cleanup may already have removed one or both original sidecars.
+    // Only a verified exact archive permits that completed state.
+    if(completedImages(r,archiveReady(j,bytes,r))) {
+        out.state=StartupState::Completed;
+        out.message="Transfer complete; archive required";
+        return out;
+    }
     auto ss=state(s,r.sb,r.sa),ds=state(d,r.db,r.da);
     if(ss==State::Conflict||ds==State::Conflict||
        (ss!=State::Before&&ds!=State::After)) {
@@ -349,6 +381,41 @@ JournalResult recoverActiveJournal(const std::string& journal) {
     if(review.state!=StartupState::Pending)
         return {Status::Conflict,review.message};
     return resumeJournal(journal,review.source,review.destination);
+}
+
+JournalResult archiveActiveJournal(const std::string& journal,bool stopAfterFirstSidecar) {
+    auto j=normalized(journal);
+    Bytes bytes;Record r;
+    if(j.empty()||exists(j+".new")||!readBounded(j,bytes,maxJournal)||!decode(bytes,r))
+        return result(Status::InvalidJournal,"Missing or corrupt active journal");
+    if(!distinct(j,r.source,r.dest)||normalized(r.source)!=r.source||normalized(r.dest)!=r.dest)
+        return result(Status::Conflict,"Invalid archive paths");
+    auto a=archivePath(j,bytes);
+    if(!archiveDistinct(j,r,a)) return result(Status::Conflict,"Archive path collision");
+    bool archived=archiveReady(j,bytes,r);
+    if(!completedImages(r,archived)) return result(Status::Conflict,"Transfer not complete or save changed");
+    if(exists(a)&&!archived) return result(Status::Conflict,"Archive differs; keep all files");
+    if(!archived&&!writeNew(a,bytes)) return result(Status::IoError,"Cannot create archive");
+    if(!archiveReady(j,bytes,r)||!syncFile(a)||!syncParent(a))
+        return result(Status::IoError,"Archive verification failed");
+    // Independent archive copy contains both full original images. Only remove
+    // old sidecars after validating that copy. Do not rename the active record
+    // over an archive: FAT rename is not atomic across power loss.
+    int n=0;
+    for(const auto& p:{std::make_pair(r.source+".vpt-old",&r.sb),
+                       std::make_pair(r.dest+".vpt-old",&r.db)}) {
+        if(exists(p.first)) {
+            if(!completedImages(r,true)||!exact(p.first,*p.second)||
+               std::remove(p.first.c_str())!=0||exists(p.first)||!syncParent(p.first))
+                return result(Status::IoError,"Cannot release original sidecar");
+        }
+        if(++n==1&&stopAfterFirstSidecar)
+            return result(Status::Interrupted,"Stopped during archive cleanup");
+    }
+    if(!completedImages(r,true)||!archiveReady(j,bytes,r)||
+       !exact(j,bytes)||std::remove(j.c_str())!=0||exists(j)||!syncParent(j))
+        return result(Status::IoError,"Cannot release active journal");
+    return result(Status::Complete,"Transfer archived; full originals retained");
 }
 
 }

@@ -737,6 +737,9 @@ bool App::updateFrame(const Input& rawInput) {
     if(screen_==Screen::TransferRecovery) {
         if(rawInput.pressed&kKeyStart) return false;
         if(rawInput.pressed&kKeyA) {refreshTransferGate();redraw_=true;}
+#ifdef VPT_TRANSPORTER_WRITE
+        if(rawInput.pressed&kKeyX) {runTransferRecovery();redraw_=true;}
+#endif
         return true;
     }
 #endif

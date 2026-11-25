@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Optional read-only PCCS migration preview. No writes or journal operations.
+// Optional PCCS preview and separately enabled experimental write flow.
 #ifdef VPT_TRANSPORTER_PREVIEW
 #include "ds/app/app.h"
 #include "ds/app/ui_common.h"
@@ -52,14 +52,64 @@ void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
     top.text(kFontSmall,8,140,240,Align::Center,"Keep journal and sidecar files.",kMuted);
     bottom.clear(kBackground);
     bottom.text(kFontLarge,0,44,256,Align::Center,"Editor blocked",kText);
+#ifdef VPT_TRANSPORTER_WRITE
+    using pokemon::pccs_bridge::StartupState;
+    bottom.text(kFontSmall,0,70,256,Align::Center,
+        transferStartup_.state==StartupState::Pending?"X: Resume recorded transfer":
+        transferStartup_.state==StartupState::Completed?"X: Archive completed transfer":"Conflicting files: no writes",kYellow);
+#else
     bottom.text(kFontSmall,0,70,256,Align::Center,"Read-only recovery inspection",kMuted);
+#endif
     bottom.text(kFontSmall,0,102,256,Align::Center,"A: Recheck journal",kText);
     bottom.text(kFontSmall,0,120,256,Align::Center,"START: Exit",kText);
+#ifdef VPT_TRANSPORTER_WRITE
+    bottom.text(kFontSmall,0,148,256,Align::Center,"Experimental - disposable saves only",kYellow);
+#else
     bottom.text(kFontSmall,0,148,256,Align::Center,"Recovery writes not enabled in this build",kYellow);
+#endif
+}
+void App::runTransferRecovery() {
+#ifdef VPT_TRANSPORTER_WRITE
+    namespace br=pokemon::pccs_bridge;
+    if(refreshTransferGate()) return;
+    sprites_.clear();
+    auto j=activeTransferPath();
+    br::JournalResult r{br::JournalStatus::Conflict,"Conflicting transaction; no writes"};
+    if(transferStartup_.state==br::StartupState::Pending)
+        r=br::recoverActiveJournal(j);
+    else if(transferStartup_.state==br::StartupState::Completed)
+        r=br::archiveActiveJournal(j);
+    scanned_=false;saveFiles_.clear();
+    if(refreshTransferGate()) showMessage("Transporter",r.message);
+    else transferStartup_.message=r.message;
+#endif
+}
+void App::commitTransporter() {
+#ifdef VPT_TRANSPORTER_WRITE
+    if(!transportReview_||!transportAccepted_||!transportConfirm_) return;
+    transportConfirm_=false;
+    if(!refreshTransferGate()) {transportReview_.reset();return;}
+    if(!transportReview_->originalsMatch()) {
+        transportMessage_="Save changed; restart preview";transportReview_.reset();transportAccepted_=false;return;
+    }
+    auto j=activeTransferPath();
+    auto dir=j.substr(0,j.find_last_of('/'));
+    if(!io::makeDirectories(dir)) {transportMessage_="Cannot create journal directory";return;}
+    auto r=transportReview_->persist(j);
+    // Drop the reviewed snapshots before loading the recovery journal.
+    transportReview_.reset();transportAccepted_=false;
+    if(r.status!=pokemon::pccs_bridge::JournalStatus::Complete) {
+        if(refreshTransferGate()) transportMessage_=r.message;
+        else transferStartup_.message=r.message;
+        return;
+    }
+    // Recovery screen remains modal until explicit archive. No second PCCS call.
+    runTransferRecovery();
+#endif
 }
 void App::openTransporter() {
-    if(!refreshTransferGate()) return;
     if (!config_.storageReady) { showMessage("Transporter","SD card unavailable."); return; }
+    if(!refreshTransferGate()) return;
     // Home only: release large cached state before loading two save images.
     if(save_ || bankDirty_ || !bankWithdrawn_.empty()) {
         showMessage("Transporter","Close the current save first.");
@@ -70,7 +120,7 @@ void App::openTransporter() {
     transportSourceBytes_.clear();transportDestBytes_.clear();transportReview_.reset();
     transportSource_.clear();transportDest_.clear();
     transportRows_.clear();transportNotes_.clear();transportPositions_.clear();
-    transportMessage_.clear();transportAccepted_=false;
+    transportMessage_.clear();transportAccepted_=false;transportConfirm_=false;
     transportSaves_=saves::findPokemonSaves(config_.scanRoot,3);
     transportSaves_.erase(std::remove_if(transportSaves_.begin(),transportSaves_.end(),
         [](const saves::SaveSummary& s){return s.game!=saves::Game::Crystal;}),
@@ -142,6 +192,7 @@ void App::transporterPreview() {
 }
 void App::updateTransporter(const Input& in) {
     if(in.pressed&kKeyB) {
+        transportConfirm_=false;
         transportSave_.reset();transportReview_.reset();
         std::vector<uint8_t>().swap(transportSourceBytes_);
         std::vector<uint8_t>().swap(transportDestBytes_);
@@ -149,6 +200,14 @@ void App::updateTransporter(const Input& in) {
         screen_=Screen::Home;
         return;
     }
+#ifdef VPT_TRANSPORTER_WRITE
+    if(transportPhase_==TransportPhase::Review && transportReview_ && transportAccepted_ &&
+       (in.pressed&kKeyStart)) {
+        if(transportConfirm_) commitTransporter();
+        else {transportConfirm_=true;transportMessage_="START again to MOVE Pokemon";}
+        return;
+    }
+#endif
     int count=static_cast<int>(transportRows_.size());
     if(in.repeated&kKeyUp) transportCursor_=wrap(transportCursor_-1,count);
     if(in.repeated&kKeyDown) transportCursor_=wrap(transportCursor_+1,count);
@@ -208,13 +267,22 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
     top.text(kFontSmall,9,99,238,Align::Left,Canvas::ellipsize(kFontSmall,"To: "+transportDest_,238),kText);
     top.text(kFontSmall,9,116,238,Align::Center,Canvas::ellipsize(kFontSmall,transportMessage_,238),
         transportPhase_==TransportPhase::Review?(transportAccepted_?kGreen:kRed):kMuted);
+#ifdef VPT_TRANSPORTER_WRITE
+    top.text(kFontSmall,9,136,238,Align::Center,"Experimental - disposable saves only",kYellow);
+#else
     top.text(kFontSmall,9,136,238,Align::Center,"READ ONLY - no save changes",kYellow);
+#endif
     top.text(kFontSmall,9,151,238,Align::Center,"Unofficial conversion",kMuted);
     bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
     if(transportRows_.empty()) bottom.text(kFontLarge,0,80,256,Align::Center,"No eligible entries",kMuted);
     else drawList(bottom,transportRows_,transportCursor_,transportScroll_,5,8,246,22,7);
-    if(transportPhase_==TransportPhase::Review)
+    if(transportPhase_==TransportPhase::Review) {
+#ifdef VPT_TRANSPORTER_WRITE
+        if(transportAccepted_) drawHints(bottom,{{"A","Recheck"},{"START","Move"},{"B","Cancel"}},{kKeyA,kKeyStart,kKeyB});
+        else
+#endif
         drawHints(bottom,{{"A","Recheck"},{"B","Home"}},{kKeyA,kKeyB});
+    }
     else drawHints(bottom,{{"A","Select"},{"+","Move"},{"B","Cancel"}},{kKeyA,0,kKeyB});
 }
 }

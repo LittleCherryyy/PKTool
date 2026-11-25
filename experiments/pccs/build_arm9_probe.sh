@@ -37,12 +37,12 @@ s = p.read_text()
 a = "LIBDIRS := $(LIBNDS) $(PORTLIBS)"
 b = "LIBS := -lfilesystem -lfat -lnds9"
 assert s.count(a) == s.count(b) == 1
-p.write_text(s.replace(a, a + " " + str(root)).replace(b, "LIBS := -lpccs -lfilesystem -lfat -lnds9").replace("-DARM9", "-DARM9 -DVPT_TRANSPORTER_PREVIEW"))
+p.write_text(s.replace(a, a + " " + str(root)).replace(b, "LIBS := -lpccs -lfilesystem -lfat -lnds9").replace("-DARM9", "-DARM9 -DVPT_TRANSPORTER_PREVIEW -DVPT_TRANSPORTER_WRITE"))
 p = pathlib.Path("ds/main.cpp")
 s = p.read_text()
 a = "int main() {"
 assert s.count(a) == 1
-p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("ui::Config config;", "ui::Config config;\n    config.transporterPreview = isDSiMode();\n    config.version = \"VPT006D-preview\";"))
+p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("ui::Config config;", "ui::Config config;\n    config.transporterPreview = isDSiMode();\n    config.version = \"VPT007-candidate\";"))
 pathlib.Path("ds/vpt_arm9_bridge.cpp").write_text('#include "../experiments/pccs/pccs_bridge.cpp"\n')
 pathlib.Path("ds/vpt_arm9_stage.cpp").write_text('#include "../experiments/pccs/stage_transfer.cpp"\n')
 pathlib.Path("ds/vpt_arm9_journal.cpp").write_text('#include "../experiments/pccs/transfer_journal.cpp"\n')
@@ -59,5 +59,7 @@ grep -F 'App::drawTransporter(' "$work/symbols"
 grep -F 'ReviewedTransfer::create(' "$work/symbols"
 grep -F 'inspectActiveJournal(' "$work/symbols"
 grep -F 'App::drawTransferRecovery(' "$work/symbols"
+grep -F 'archiveActiveJournal(' "$work/symbols"
+grep -F 'App::commitTransporter(' "$work/symbols"
 # Neither the linked NDS nor the static library is published by this workflow.
 echo "PASS: linked ARM9 probe (build only; no hardware execution)"

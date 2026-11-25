@@ -78,6 +78,17 @@ int main(){
     REQUIRE(io::readFile(a,bytes));auto sr=sv::loadSaveFile(bytes);
     REQUIRE(sr&&sv::validateSave(*sr)&&sr->readBoxSlot(0,0,e.data())==sv::SlotState::Empty);
     REQUIRE(!review->originalsMatch());
+    REQUIRE(br::archiveActiveJournal(j,true).status==br::JournalStatus::Interrupted);
+    REQUIRE(br::inspectActiveJournal(j).state==br::StartupState::Completed);
+    REQUIRE(!io::fileExists(a+".vpt-old")&&io::fileExists(b+".vpt-old"));
+    REQUIRE(br::archiveActiveJournal(j).status==br::JournalStatus::Complete);
+    REQUIRE(br::inspectActiveJournal(j).state==br::StartupState::Clear);
+    REQUIRE(!io::fileExists(b+".vpt-old")&&!io::fileExists(j));
+    int archives=0;
+    for(auto& file:fs::directory_iterator(root))
+        if(file.path().filename().string().find("transfer.vpt.archive-")==0) ++archives;
+    REQUIRE(archives==1);
+    std::puts("PASS: archive cleanup interruption and resume");
     std::puts("PASS: startup gate clear, partial, corrupt, pending, conflict, recovered and complete; exact reviewed bytes persisted");
     return 0;
 }

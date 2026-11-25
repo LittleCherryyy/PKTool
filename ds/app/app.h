@@ -169,6 +169,9 @@ private:
     void openTransporter();
     std::string activeTransferPath() const;
     bool refreshTransferGate();
+    void runTransferRecovery();
+    void commitTransporter();
+    bool transportConfirm_ = false;
     void drawTransferRecovery(gfx::Canvas& top,gfx::Canvas& bottom);
     pokemon::pccs_bridge::StartupReview transferStartup_;
     void updateTransporter(const Input& in);

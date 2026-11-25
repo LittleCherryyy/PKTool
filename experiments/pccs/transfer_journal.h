@@ -22,6 +22,9 @@ struct JournalResult {
 };
 // Explicit recovery only. Read paths from the validated fixed journal.
 JournalResult recoverActiveJournal(const std::string& journal);
+// Archive exact journal before releasing original sidecars. Restartable.
+// stopAfterFirstSidecar is a host fault-injection hook.
+JournalResult archiveActiveJournal(const std::string& journal,bool stopAfterFirstSidecar=false);
 // Opaque reviewed transfer: only the factory can construct a conversion.
 class ReviewedTransfer {
 public:
