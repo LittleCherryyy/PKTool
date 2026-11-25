@@ -696,6 +696,8 @@ bool App::update(const Input& input) {
     const Screen before = screen_;
     const bool keepRunning = updateFrame(input);
     ++frame_;
+    if (screen_ != before || input.pressed || input.repeated || input.touched) marqueeStart_ = frame_;
+    if (marqueeActive_ && (frame_ - marqueeStart_) % 3 == 0) redraw_ = true;
     tickAnimations(before);
     return keepRunning;
 }
@@ -2355,6 +2357,7 @@ void App::startCreatedEdit(const pokemon::Pokemon& p, const uint8_t* raw, const 
 
 void App::draw(Canvas& top, Canvas& bottom) {
     zones_.clear();
+    marqueeActive_ = false;
     top.resetClip();
     bottom.resetClip();
     switch (screen_) {
@@ -2653,8 +2656,14 @@ void App::drawList(Canvas& c, const std::vector<std::string>& rows, int cursor, 
         const int index = scroll + i;
         const int ry = y + i * rowHeight;
         const bool selected = index == cursor;
-        c.text(kFontSmall, x + 6, ry + (rowHeight - 13) / 2, w - 12, Align::Left, rows[index],
-               dimmed != nullptr && !(*dimmed)[static_cast<size_t>(index)].empty() ? kDim : selected ? kText : kMuted);
+        const Color rowColor = dimmed != nullptr && !(*dimmed)[static_cast<size_t>(index)].empty() ? kDim : selected ? kText : kMuted;
+        if (selected) {
+            marqueeActive_ |= drawMarquee(c, x + 6, ry + (rowHeight - 13) / 2,
+                                           w - 12, Align::Left, rows[index], rowColor,
+                                           frame_ - marqueeStart_);
+        } else {
+            c.text(kFontSmall, x + 6, ry + (rowHeight - 13) / 2, w - 12, Align::Left, rows[index], rowColor);
+        }
         zones_.push_back({x, ry, w, rowHeight, kZoneItem + index});
     }
     // Scrollbar.

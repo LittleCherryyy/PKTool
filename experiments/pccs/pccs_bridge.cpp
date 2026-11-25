@@ -66,11 +66,11 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
         return result;
     }
     const auto target = pk3::toPokemon(bytes.data(), bytes.size());
-    if (target.species != original.species || target.isEgg ||
-        target.shiny != original.shiny || target.gender != original.gender ||
-        target.trainer.tid != original.trainer.tid || target.trainer.name != original.trainer.name ||
-        target.trainer.gender != original.trainer.gender || target.language != original.language ||
-        target.nickname != original.nickname || target.form != original.form) {
+    // The GB codec displays the in-game trade OT control code as "*".
+    // PCCS expands the exact two-byte English token to the displayed TRAINER.
+    const bool tradeOt = entity[pk2::kOtOffset] == 0x5D &&
+                         entity[pk2::kOtOffset + 1] == 0x50;
+    if (!checkProtectedIdentity(original, target, tradeOt, result.notes)) {
         result.error = "Conversion changes protected identity fields";
         return result;
     }

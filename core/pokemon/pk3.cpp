@@ -113,6 +113,14 @@ Pokemon toPokemon(const uint8_t* d, size_t size) {
 
     p.nature = natureFromPid(p.pid);
     p.gender = edit4::genderFromPid(p.species, p.pid);
+    // Gen III Unown letter is encoded in four two-bit fields of the PID.
+    if (p.species == 201) {
+        const uint32_t letter = ((p.pid & 0x03000000u) >> 18) |
+                                ((p.pid & 0x00030000u) >> 12) |
+                                ((p.pid & 0x00000300u) >> 6) |
+                                (p.pid & 3u);
+        p.form = static_cast<uint8_t>(letter % 28);
+    }
     p.shiny = isShiny(p.pid, p.trainer.tid, p.trainer.sid);
     p.isNicknamed = !p.isEgg && p.species != 0 && p.nickname != upperSpeciesName(p.species, p.language);
     if (const data::PersonalInfo* info = data::personal4(p.species)) {

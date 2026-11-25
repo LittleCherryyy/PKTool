@@ -68,6 +68,31 @@ inline int clampInt(int value, int low, int high) {
     return value < low ? low : (value > high ? high : value);
 }
 
+// Pixel-based ping-pong text, paused at each end. Return true only if
+// another redraw is needed. Call outside any other clipping region.
+inline int marqueeOffset(int overflow, uint32_t frames) {
+    if (overflow <= 0) return 0;
+    constexpr uint32_t pause = 50, framesPerPixel = 3;
+    const uint32_t travel = static_cast<uint32_t>(overflow) * framesPerPixel;
+    const uint32_t t = frames % (2 * (pause + travel));
+    if (t < pause) return 0;
+    if (t < pause + travel) return static_cast<int>((t - pause) / framesPerPixel);
+    if (t < 2 * pause + travel) return overflow;
+    return overflow - static_cast<int>((t - 2 * pause - travel) / framesPerPixel);
+}
+inline bool drawMarquee(Canvas& c, int x, int y, int w, Align align,
+                        const std::string& text, Color color, uint32_t frames) {
+    const int overflow = Canvas::textWidth(kFontSmall, text) - w;
+    if (overflow <= 0) {
+        c.text(kFontSmall,x,y,w,align,text,color);
+        return false;
+    }
+    c.setClip(x,y,w,16);
+    c.text(kFontSmall,x-marqueeOffset(overflow,frames),y,text,color);
+    c.resetClip();
+    return true;
+}
+
 inline std::string twoDigits(int value) {
     char buffer[12];  // any int fits
     std::snprintf(buffer, sizeof(buffer), "%02d", value);

@@ -313,6 +313,8 @@ private:
     Dialog dialog_ = Dialog::None;
     Pending pending_ = Pending::None;
     bool redraw_ = true;
+    bool marqueeActive_ = false;
+    uint32_t marqueeStart_ = 0;
     uint32_t frame_ = 0;            // update() calls so far
     int fadeLeft_ = 0;              // frames of screen fade-in left
     bool easing_ = false;           // the selection bar is still gliding (set while drawing)

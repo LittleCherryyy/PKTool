@@ -45,9 +45,9 @@ void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
     drawChrome(top,"Poke Transporter","RECOVERY",kYellow);
     top.roundRect(5,kBodyTop+3,246,136,kBorder,kPanel);
     top.text(kFontLarge,8,45,240,Align::Center,"Transfer locked",kYellow);
-    top.text(kFontSmall,8,68,240,Align::Center,Canvas::ellipsize(kFontSmall,transferStartup_.message,240),kText);
-    top.text(kFontSmall,8,87,240,Align::Left,Canvas::ellipsize(kFontSmall,"From: "+transferStartup_.source,240),kMuted);
-    top.text(kFontSmall,8,101,240,Align::Left,Canvas::ellipsize(kFontSmall,"To: "+transferStartup_.destination,240),kMuted);
+    marqueeActive_ |= drawMarquee(top,8,68,240,Align::Center,transferStartup_.message,kText,frame_-marqueeStart_);
+    marqueeActive_ |= drawMarquee(top,8,87,240,Align::Left,"From: "+transferStartup_.source,kMuted,frame_-marqueeStart_);
+    marqueeActive_ |= drawMarquee(top,8,101,240,Align::Left,"To: "+transferStartup_.destination,kMuted,frame_-marqueeStart_);
     top.text(kFontSmall,8,124,240,Align::Center,"Do not open either save in a game.",kYellow);
     top.text(kFontSmall,8,140,240,Align::Center,"Keep journal and sidecar files.",kMuted);
     bottom.clear(kBackground);
@@ -187,14 +187,8 @@ void App::transporterPreview() {
     std::vector<uint8_t>().swap(transportSourceBytes_);
     std::vector<uint8_t>().swap(transportDestBytes_);
     if(!transportAccepted_) {
-        std::string rest=transportMessage_;
-        while(!rest.empty()) {
-            size_t n=std::min<size_t>(rest.size(),30);
-            while(n<rest.size() && (static_cast<unsigned char>(rest[n])&0xc0)==0x80) --n;
-            if(n==0) break;
-            transportNotes_.push_back(rest.substr(0,n));
-            rest.erase(0,n);
-        }
+        // Keep complete diagnostic sentences as selectable scrolling rows.
+        transportNotes_.insert(transportNotes_.begin(),transportMessage_);
     }
     transportRows_=transportNotes_;
     transportPhase_=TransportPhase::Review;
@@ -273,10 +267,10 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
     }
     top.text(kFontLarge,9,45,238,Align::Center,phase,kText);
     top.text(kFontSmall,9,66,238,Align::Center,"Gen II -> Gen III | English only",kMuted);
-    top.text(kFontSmall,9,84,238,Align::Left,Canvas::ellipsize(kFontSmall,"From: "+transportSource_,238),kText);
-    top.text(kFontSmall,9,99,238,Align::Left,Canvas::ellipsize(kFontSmall,"To: "+transportDest_,238),kText);
-    top.text(kFontSmall,9,116,238,Align::Center,Canvas::ellipsize(kFontSmall,transportMessage_,238),
-        transportPhase_==TransportPhase::Review?(transportAccepted_?kGreen:kRed):kMuted);
+    marqueeActive_ |= drawMarquee(top,9,84,238,Align::Left,"From: "+transportSource_,kText,frame_-marqueeStart_);
+    marqueeActive_ |= drawMarquee(top,9,99,238,Align::Left,"To: "+transportDest_,kText,frame_-marqueeStart_);
+    marqueeActive_ |= drawMarquee(top,9,116,238,Align::Center,transportMessage_,
+        transportPhase_==TransportPhase::Review?(transportAccepted_?kGreen:kRed):kMuted,frame_-marqueeStart_);
 #ifdef VPT_TRANSPORTER_WRITE
     top.text(kFontSmall,9,136,238,Align::Center,"Experimental - disposable saves only",kYellow);
 #else

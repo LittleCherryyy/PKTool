@@ -18,6 +18,29 @@ namespace legal = pktool::legality;
 namespace bridge = pk::pccs_bridge;
 
 int main() {
+    // All 28 Gen III Unown forms must be decoded from the PID, not default 0.
+    for (unsigned form = 0; form < 28; ++form) {
+        std::array<uint8_t, pk::pk3::kStoredSize> raw{};
+        raw[0] = form & 3; raw[1] = (form >> 2) & 3;
+        raw[2] = (form >> 4) & 3; raw[3] = (form >> 6) & 3;
+        raw[pk::pk3::offset::kSpecies] = 201;
+        raw[pk::pk3::offset::kLanguage] = 2;
+        if (pk::pk3::toPokemon(raw.data(),raw.size()).form != form) return 21;
+    }
+    pk::Pokemon before, after;
+    before.language = after.language = 2;
+    before.trainer.name = "*"; after.trainer.name = "TRAINER";
+    std::vector<std::string> notes;
+    if (!bridge::checkProtectedIdentity(before,after,true,notes) || notes.empty()) return 22;
+    notes.clear();
+    if (bridge::checkProtectedIdentity(before,after,false,notes) || notes.empty()) return 23;
+    after.shiny = true; after.trainer.tid = 123;
+    notes.clear();
+    if (bridge::checkProtectedIdentity(before,after,true,notes) || notes.size() != 3) return 24;
+    after.shiny = false; after.trainer.tid = 0; after.trainer.name = "OTHER";
+    notes.clear();
+    if (bridge::checkProtectedIdentity(before,after,true,notes)) return 25;
+    std::puts("PASS: all Unown forms and exact identity diagnostics");
     // Regression: allow only the exact non-invalid, expected PCCS warning.
     pk::Pokemon policyPokemon;
     policyPokemon.format = 3;
