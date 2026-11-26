@@ -229,6 +229,11 @@ void App::commitTransporter() {
     if(!transportReview_->originalsMatch()) {
         transportMessage_="Save changed; restart preview";transportReview_.reset();transportAccepted_=false;return;
     }
+    // The animation no longer needs sprites. Release up to 128 KiB of
+    // decoded art, pack indices and all open NitroFS/FAT handles before
+    // persisting large reviewed save images on the constrained ARM9 heap.
+    // This never changes the already accepted review or staged save bytes.
+    sprites_.clear();
     auto j=activeTransferPath();
     auto dir=j.substr(0,j.find_last_of('/'));
     if(!io::makeDirectories(dir)) {transportMessage_="Cannot create journal directory";return;}
