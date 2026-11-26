@@ -66,6 +66,7 @@ private:
     struct Pack {
         std::FILE* file = nullptr;  // open for the store's lifetime
         std::vector<uint32_t> offsets;
+        std::string path;  // chosen location, retained for reopen after LRU eviction
         bool tried = false;
         uint32_t lastUsed = 0;
     };
