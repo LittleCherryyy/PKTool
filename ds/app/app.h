@@ -245,7 +245,7 @@ private:
     std::vector<uint16_t> transportBoxSpecies_;
     int transportBoxSlots_=0;
     void refreshTransportNames();
-    void drawTransportSprite(gfx::Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t generation,bool enlarge=false);
+    void drawTransportSprite(gfx::Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t generation,bool enlarge=false,transport_visual::VisualEdition edition={});
     void drawTransportAnimation(gfx::Canvas& top,gfx::Canvas& bottom);
 #endif
     void updateDialog(const Input& in);
