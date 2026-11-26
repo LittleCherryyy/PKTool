@@ -810,37 +810,57 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
     const size_t idx=count?std::min(count-1,static_cast<size_t>(elapsed/kLinkFramesPerPokemon)):0;
     const uint8_t generation=idx<transportEntries_.size()?transportEntries_[idx].mon.format:transportGeneration_;
     const uint32_t phase=finale?239:elapsed%kLinkFramesPerPokemon;
-    const bool departure=phase<60,travel=phase>=60&&phase<150,change=phase>=150&&phase<180;
-    const bool arrival=phase>=180;
-    const char* stage=finale?"LINK SEQUENCE COMPLETE":departure?"READY TO DEPART":travel?"CROSSING THE LINK":change?"CONVERTING TO GBA":"ARRIVING ON GBA";
+    const auto step=visual::linkStage(phase);
+    const bool departure=step==visual::LinkStage::Departure;
+    const bool outbound=step==visual::LinkStage::Outbound;
+    const bool change=step==visual::LinkStage::Transform;
+    const bool inbound=step==visual::LinkStage::Inbound;
+    const bool arrival=step==visual::LinkStage::Arrival;
+    const bool after=visual::destinationArt(phase);
+    const char* stage=finale?"LINK SEQUENCE COMPLETE":departure?"READY TO DEPART":
+                      outbound?"LEAVING GAME BOY":change?"TRANSFORMING SPRITE":
+                      inbound?"ENTERING GBA":"ARRIVING ON GBA";
     const Color gb=generation==1?rgb(181,202,133):rgb(220,235,208);
     const Color gba=rgb(205,229,210),ink=rgb(30,54,35);
     top.clear(kBackground);bottom.clear(kBackground);
     top.text(kFontLarge,0,8,256,Align::Center,stage,kText);
-    // VPT031: sprites now follow the confirmed source and destination editions.
-    // The cable movement and transformation timeline remain VPT032 work.
+    // VPT032: the actual source sprite travels to the centre transformer,
+    // changes art during one flash and continues as the destination sprite.
     const auto srcModel=visual::console(transportSourceVisual_.edition);
     const auto dstModel=visual::console(transportDestVisual_.edition);
     const auto src=drawLinkConsole(top,srcModel,true);
     const auto dst=drawLinkConsole(top,dstModel,false);
-    top.fillRect(92,83,72,5,kPanelDark);top.hline(92,85,72,kMuted);
-    top.fillRect(90,79,5,13,kMuted);top.fillRect(161,79,5,13,kMuted);
+    top.fillRect(92,83,72,5,kPanelDark);
+    top.hline(92,85,72,kMuted);
+    top.fillRect(90,79,5,13,kMuted);
+    top.fillRect(161,79,5,13,kMuted);
+    // The centre of the cable is a transformer, not the destination screen.
+    top.roundRect(114,68,28,35,kBorder,kPanelDark,2);
+    top.fillRect(119,73,18,24,rgb(77,99,128));
+    top.hline(120,83,16,kAccent);
+    top.hline(120,89,16,kAccent);
     if(count) {
         const auto& mon=transportResultMons_[idx];
         const auto& original=idx<transportEntries_.size()?transportEntries_[idx].mon:mon;
-        if(departure) drawTransportSprite(top,original,src.x,src.y,src.w,src.h,generation,false,transportSourceVisual_);
-        else if(arrival) drawTransportSprite(top,mon,dst.x,dst.y,dst.w,dst.h,3,false,transportDestVisual_);
-        if(travel) {
-            const int x=94+static_cast<int>((phase-60)*68/89);
-            top.hline(94,85,x-93,kAccent);
-            transferBall(top,x,85,8);
+        if(departure) {
+            drawTransportSprite(top,original,src.x,src.y,src.w,src.h,generation,false,transportSourceVisual_);
+            top.brackets(src.x-2,src.y-2,src.w+4,src.h+4,kYellow,6);
+        } else if(arrival) {
+            drawTransportSprite(top,mon,dst.x,dst.y,dst.w,dst.h,3,false,transportDestVisual_);
+            top.brackets(dst.x-2,dst.y-2,dst.w+4,dst.h+4,kGreen,6);
+        } else if(outbound||inbound) {
+            const int cx=visual::cableX(phase);
+            top.hline(92,85,cx-91,kAccent);
+            drawTransportSprite(top,outbound?original:mon,cx-11,73,22,24,outbound?generation:3,false,
+                                outbound?transportSourceVisual_:transportDestVisual_);
         } else if(change) {
-            const int radius=5+static_cast<int>((phase-150)/5);
-            top.circle(dst.x+dst.w/2,dst.y+dst.h/2,radius+5,kYellow);
-            transferBall(top,dst.x+dst.w/2,dst.y+dst.h/2,radius);
+            const int t=static_cast<int>(phase-120);
+            drawTransportSprite(top,after?mon:original,117,72,22,25,after?3:generation,false,
+                                after?transportDestVisual_:transportSourceVisual_);
+            const int radius=4+std::max(0,15-std::abs(t-15))/2;
+            top.circle(128,85,radius,kYellow);
+            top.blendRect(114,68,28,35,rgb(255,255,255),std::max(0,24-std::abs(t-15)*2));
         }
-        if(departure) top.brackets(src.x-2,src.y-2,src.w+4,src.h+4,kYellow,6);
-        if(arrival) top.brackets(dst.x-2,dst.y-2,dst.w+4,dst.h+4,kGreen,6);
         top.text(kFontSmall,2,155,96,Align::Center,visual::consoleName(srcModel),kMuted);
         top.text(kFontSmall,159,155,96,Align::Center,visual::consoleName(dstModel),kMuted);
         top.text(kFontSmall,2,166,96,Align::Center,visual::label(transportSourceVisual_),kText);
@@ -849,23 +869,28 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
 
         // Lower screen focuses on one Pokemon at a time, with a larger
         // nearest-neighbour sprite and a deliberate reveal of the GBA art.
-        bottom.roundRect(8,5,240,122,kBorder,arrival?gba:gb,2);
-        if(travel) {
-            const int x=30+static_cast<int>((phase-60)*196/89);
+        bottom.roundRect(8,5,240,122,kBorder,after?gba:gb,2);
+        if(outbound||inbound) {
+            const int cx=visual::previewX(phase);
             bottom.hline(20,63,216,ink);
-            for(int i=0;i<4;++i) bottom.circle(x-6*i,63,3,ink);
-            transferBall(bottom,x,63,13);
+            bottom.roundRect(113,43,30,40,kBorder,kPanelDark,2);
+            bottom.fillRect(119,49,18,28,rgb(77,99,128));
+            drawTransportSprite(bottom,after?mon:original,cx-34,20,68,86,after?3:generation,true,
+                                after?transportDestVisual_:transportSourceVisual_);
         } else if(change) {
-            const int t=static_cast<int>(phase-150);
-            drawTransportSprite(bottom,t<15?original:mon,54,10,148,112,t<15?generation:3,true,t<15?transportSourceVisual_:transportDestVisual_);
-            // One smooth, short transition (not repeated flashing).
-            const int alpha=std::max(0,20-std::abs(t-15)*2);
-            bottom.blendRect(10,7,236,118,rgb(255,255,255),alpha);
+            const int t=static_cast<int>(phase-120);
+            drawTransportSprite(bottom,after?mon:original,54,10,148,112,after?3:generation,true,
+                                after?transportDestVisual_:transportSourceVisual_);
+            // Exactly one flash; the revealed sprite is already the GBA art.
+            bottom.blendRect(10,7,236,118,rgb(255,255,255),std::max(0,26-std::abs(t-15)*2));
         } else {
-            drawTransportSprite(bottom,arrival?mon:original,54,10,148,112,arrival?3:generation,true,arrival?transportDestVisual_:transportSourceVisual_);
+            drawTransportSprite(bottom,after?mon:original,54,10,148,112,after?3:generation,true,
+                                after?transportDestVisual_:transportSourceVisual_);
         }
-        bottom.text(kFontLarge,8,130,240,Align::Center,finale?"All Pokemon prepared":arrival?mon.nickname:original.nickname,kText);
-        const std::string detail=finale?"Saving begins after the animation":departure?"Original sprite":travel?"Link cable connected":change?"GB / GBC to GBA":"GBA sprite ready";
+        bottom.text(kFontLarge,8,130,240,Align::Center,finale?"All Pokemon prepared":after?mon.nickname:original.nickname,kText);
+        const std::string detail=finale?"Saving begins after the animation":departure?"Original game sprite":
+                                 outbound?"Sprite crosses first cable half":change?"Transformation flash":
+                                 inbound?"GBA sprite crosses second half":"GBA sprite arrived";
         bottom.text(kFontSmall,8,146,240,Align::Center,detail,kMuted);
     }
     bottom.rect(13,161,230,8,kBorder);
