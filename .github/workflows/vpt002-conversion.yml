@@ -39,7 +39,9 @@ jobs:
             experiments/pccs/pccs_bridge.cpp experiments/pccs/stage_transfer.cpp experiments/pccs/test_stage_transfer.cpp \
             build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt004"
       - name: Test in-memory Crystal and Ruby save round-trip
-        run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt004"
+        run: |
+          mkdir -p "$RUNNER_TEMP/pk3-audit"
+          VPT_PK3_AUDIT_DIR="$RUNNER_TEMP/pk3-audit" timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt004"
       - name: Compile POSIX journal and recovery test
         run: |
           c++ -std=c++17 -O2 -Wall -Wextra -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \
@@ -71,3 +73,24 @@ jobs:
             experiments/pccs/pccs_bridge.cpp experiments/pccs/stage_transfer.cpp experiments/pccs/transfer_journal.cpp experiments/pccs/test_transporter_ui.cpp \
             build-vpt-ui/libpktool_ui.a build-vpt-ui/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt007-ui"
           timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt007-ui"
+      - name: Set up independent PKHeX audit runtime
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Fetch pinned PKHeX source
+        run: |
+          git clone --no-checkout https://github.com/kwsch/PKHeX.git "$RUNNER_TEMP/pkhex"
+          git -C "$RUNNER_TEMP/pkhex" checkout --detach bfe89c74a3f5265805e364b79bc04ad38ebbc5ea
+          test "$(git -C "$RUNNER_TEMP/pkhex" rev-parse HEAD)" = bfe89c74a3f5265805e364b79bc04ad38ebbc5ea
+      - name: Independent PKHeX audit (report-only until discrepancies reviewed)
+        run: |
+          PKHeXRoot="$RUNNER_TEMP/pkhex" dotnet run --project experiments/pccs/pkhex-audit/Audit.csproj -c Release -- "$RUNNER_TEMP/pk3-audit" | tee "$RUNNER_TEMP/pkhex-report.txt"
+      - name: Preserve synthetic audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkhex-synthetic-report
+          path: |
+            ${{ runner.temp }}/pkhex-report.txt
+            ${{ runner.temp }}/pk3-audit/*.refused.txt
+          if-no-files-found: warn

@@ -235,8 +235,9 @@ int main() {
         REQUIRE(put(good,{1,2,3}));
         press(app,ui::kKeyA);
         REQUIRE(std::string(app.screenName())=="Transporter"&&app.transporterRows().size()==2);
-        press(app,ui::kKeyY);
-        REQUIRE(app.transporterRows().size()==2); // no in-session full rescan
+        press(app,ui::kKeyY); // history, not rescan
+        press(app,ui::kKeyB); // back to the source list
+        REQUIRE(app.transporterRows().size()==2);
         press(app,ui::kKeyB);
         io::resetReadStats();press(app,ui::kKeyY);
         REQUIRE(app.transporterRows().size()==2&&io::readStats().opens==0);
@@ -295,6 +296,48 @@ int main() {
         REQUIRE(app.transporterRows().size()==2);
         REQUIRE(app.transporterRows()[1].find("READY | 2 free")==0);
         REQUIRE(!io::fileExists(cc.dataDir+"/transporter/active.vpt"));
+    }
+    // Whole-box selection and existing Bank destination through the UI.
+    {
+        const auto bankRoot=root+"/transport-bank";
+        REQUIRE(io::makeDirectories(bankRoot));
+        const auto source=bankRoot+"/crystal.sav";
+        auto gb=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Crystal));
+        REQUIRE(gb);
+        tr.version=41;tr.language=2;tr.name="ASH";
+        for(int i=0;i<20;++i) {
+            pk::create4::encode(pk::create4::newPokemon(tr,155,5,255+i),raw.data());raw[1]=0;
+            REQUIRE(gb->writeBoxSlot(0,i,raw.data()));
+        }
+        gb->refreshChecksums();
+        ui::Config bc=cfg;bc.scanRoot=bankRoot;bc.dataDir=bankRoot+"/PKTOOL";
+        const auto dir=bc.dataDir+"/bank",bp=dir+"/bank.pkb",journal=bc.dataDir+"/transporter/active.vpt";
+        pktool::bank::Bank target;
+        REQUIRE(io::makeDirectories(dir)&&put(bp,target.serialize())&&put(source,gb->data()));
+        ui::App app(bc);press(app,ui::kKeyY);press(app,ui::kKeyA);
+        REQUIRE(app.transporterRows().size()==20);
+        press(app,ui::kKeyY); // mark entire source box
+        press(app,ui::kKeyA); // destination picker, no GBA files
+        press(app,ui::kKeySelect); // existing Bank
+        REQUIRE(app.transporterRows().size()==581);
+        press(app,ui::kKeyA);
+        press(app,ui::kKeyStart);press(app,ui::kKeyStart);
+        REQUIRE(!io::fileExists(journal)&&same(source,gb->data()));
+        press(app,ui::kKeyA); // skip animation
+        REQUIRE(std::string(app.screenName())=="TransferRecovery");
+        press(app,ui::kKeyR); // page through the result
+        REQUIRE(std::string(app.screenName())=="TransferRecovery");
+        press(app,ui::kKeyA);
+        REQUIRE(std::string(app.screenName())=="Home");
+        REQUIRE(target.load(bp)==pktool::bank::Bank::LoadResult::Ok&&target.count()==20);
+        std::vector<uint8_t> srcBytes;
+        REQUIRE(io::readFile(source,srcBytes));
+        auto gone=sv::loadSaveFile(srcBytes);
+        REQUIRE(gone&&sv::validateSave(*gone)&&gone->readBoxSlot(0,0,raw.data())==sv::SlotState::Empty);
+        press(app,ui::kKeyY);press(app,ui::kKeyY); // source list, history
+        REQUIRE(std::string(app.screenName())=="Transporter");
+        press(app,ui::kKeyR);press(app,ui::kKeyB);
+        REQUIRE(app.transporterRows().size()==1);
     }
     // Verify the startup UI refuses a partially created journal too.
     REQUIRE(put(j+".new",{1,2,3}));

@@ -255,6 +255,41 @@ int main() {
     REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},1).ok);
     REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},8).ok);
     REQUIRE(!br::stageCrystalToRuby(std::vector<uint8_t>{1,2,3},originalD,{0,1},{0,5}).ok);
+    // Optional host-only audit corpus: no ROMs, no real player saves.
+    // Run all six source languages, both generations, and three destination
+    // save families. Retain conversion refusals in the report rather than
+    // silently replacing names or weakening identity checks.
+    if(const char* audit=std::getenv("VPT_PK3_AUDIT_DIR")) {
+        for(uint8_t lang:{1,2,3,4,5,7}) for(uint8_t gen:{1,2}) {
+            auto gb=sv::loadSaveFile(gen==1?fakegb::blankGen1(lang==1,false):
+                fakegb::blankGen2(lang==1?fakegb::kGen2CrystalJpn:fakegb::kGen2Gs));
+            REQUIRE(gb);
+            pk::create4::Trainer t;t.name=lang==1?"アッシュ":lang==3?"ÉRIC":lang==5?"JÖRG":lang==7?"PEÑA":"ASH";
+            t.tid=12345;t.version=gb->gameVersion();t.language=lang;
+            auto mon=pk::create4::newPokemon(t,gen==1?1:155,5,255);
+            mon.heldItem=0;
+            if(lang==1) mon.nickname=gen==1?"フシギダネ":"ヒノアラシ";
+            else mon.nickname=lang==3?"ÉCLAIR":lang==5?"BÄR":lang==7?"NIÑO":"BUDDY";
+            std::array<uint8_t,pk::entity::kMaxPartySize> raw{};
+            pk::create4::encode(mon,raw.data());
+            REQUIRE(gb->writeBoxSlot(0,0,raw.data()));gb->refreshChecksums();
+            int family=0;
+            for(auto game:{sv::Game::RubySapphire,sv::Game::Emerald,sv::Game::FireRedLeafGreen}) {
+                const auto name=std::string(audit)+"/g"+std::to_string(gen)+"-lang"+std::to_string(lang)+"-dest"+std::to_string(++family);
+                auto staged=br::stageGbBatch(gb->data(),fake::blankGen3(game),{{{0,0},{0,0}}},lang);
+                if(!staged.ok) {
+                    auto* out=std::fopen((name+".refused.txt").c_str(),"w");REQUIRE(out);
+                    std::fprintf(out,"%s\n",staged.error.c_str());
+                    for(const auto& n:staged.notes) std::fprintf(out,"%s\n",n.c_str());
+                    REQUIRE(std::fclose(out)==0);continue;
+                }
+                auto* out=std::fopen((name+".pk3").c_str(),"wb");REQUIRE(out);
+                REQUIRE(std::fwrite(staged.converted.data(),1,80,out)==80);
+                REQUIRE(std::fclose(out)==0);
+            }
+        }
+        std::puts("PASS: generated 36 synthetic locale/destination audit cases (including explicit refusals)");
+    }
     std::puts("PASS: staged Crystal to Ruby/Sapphire save round-trip; source compaction, exact destination, party and other boxes preserved; rejection cases passed");
     return 0;
 }
