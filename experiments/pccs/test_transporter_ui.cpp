@@ -27,12 +27,19 @@ void pktool::test::reportFailure(const char* f,int l,const char* e) {
 #define REQUIRE(x) do {if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);return 1;}}while(0)
 bool put(const std::string& p,const std::vector<uint8_t>& b){return io::safeWriteFile(p,b)==io::WriteResult::Ok;}
 bool same(const std::string& p,const std::vector<uint8_t>& b){std::vector<uint8_t> a;return io::readFile(p,a)&&a==b;}
-bool press(ui::App& app,uint32_t key) {
+bool pressRaw(ui::App& app,uint32_t key) {
     static std::array<uint16_t,256*192> top{},bottom{};
     bool running=app.update({key,key,false,0,0});
     app.update({});
     for(int i=0;i<10000&&app.transporterBusy();++i) app.update({});
     gfx::Canvas t(top.data()),b(bottom.data());app.draw(t,b);
+    return running;
+}
+// Older flow tests accept the explicitly displayed default. New tests
+// below use raw presses to exercise the actual confirmation screen.
+bool press(ui::App& app,uint32_t key) {
+    const bool running=pressRaw(app,key);
+    if(key==ui::kKeyA&&app.transporterChoosingEdition()) pressRaw(app,ui::kKeyA);
     return running;
 }
 int main() {
@@ -366,6 +373,37 @@ int main() {
         auto dest=sv::loadSaveFile(output);
         REQUIRE(dest&&sv::validateSave(*dest)&&dest->readBoxSlot(0,0,raw.data())==sv::SlotState::Valid);
         REQUIRE(pk::pk3::toPokemon(raw.data(),80).species==155);
+    }
+    // Ambiguous save families must not guess from contained Pokemon.
+    // Confirm Silver and Sapphire once, then reopen without an edition prompt.
+    {
+        namespace vis=pktool::transport_visual;
+        const auto r=root+"/edition";
+        REQUIRE(io::makeDirectories(r));
+        auto gs=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Gs));
+        REQUIRE(gs);
+        tr.version=39;tr.language=2;
+        pk::create4::encode(pk::create4::newPokemon(tr,155,5,255),raw.data());raw[1]=0;
+        REQUIRE(gs->writeBoxSlot(0,0,raw.data()));gs->refreshChecksums();
+        REQUIRE(put(r+"/source.sav",gs->data())&&put(r+"/target.sav",db));
+        ui::Config ec=cfg;ec.scanRoot=r;ec.dataDir=r+"/PKTOOL";
+        ui::App app(ec);pressRaw(app,ui::kKeyY);pressRaw(app,ui::kKeyA);
+        REQUIRE(app.transporterChoosingEdition()&&app.transporterRows().size()==2);
+        pressRaw(app,ui::kKeyDown);pressRaw(app,ui::kKeyA);
+        REQUIRE(app.transporterVisual(true).edition==vis::Edition::Silver);
+        pressRaw(app,ui::kKeyA);pressRaw(app,ui::kKeyA);
+        REQUIRE(app.transporterChoosingEdition());
+        pressRaw(app,ui::kKeyDown);pressRaw(app,ui::kKeyA);
+        REQUIRE(app.transporterVisual(false).edition==vis::Edition::Sapphire);
+        REQUIRE(app.transporterRows().size()==420);
+        pressRaw(app,ui::kKeyB);pressRaw(app,ui::kKeyA);
+        REQUIRE(!app.transporterChoosingEdition()&&app.transporterVisual(false).edition==vis::Edition::Sapphire);
+        pressRaw(app,ui::kKeyB);pressRaw(app,ui::kKeyB);pressRaw(app,ui::kKeyA);
+        REQUIRE(!app.transporterChoosingEdition()&&app.transporterVisual(true).edition==vis::Edition::Silver);
+        REQUIRE(same(r+"/source.sav",gs->data())&&same(r+"/target.sav",db));
+        ui::App fresh(ec);pressRaw(fresh,ui::kKeyY);pressRaw(fresh,ui::kKeyA);
+        REQUIRE(fresh.transporterChoosingEdition());
+        pressRaw(fresh,ui::kKeyB);REQUIRE(!fresh.transporterChoosingEdition()&&fresh.transporterRows().size()==1);
     }
     // Verify the startup UI refuses a partially created journal too.
     REQUIRE(put(j+".new",{1,2,3}));

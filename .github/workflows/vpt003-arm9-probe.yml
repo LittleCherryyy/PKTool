@@ -1,7 +1,7 @@
 name: VPT006 ARM9 build-only probe
 on:
   push:
-    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history']
+    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history', 'dev/vpt030-link-experience']
     paths: ['experiments/pccs/**', '.github/workflows/vpt003-arm9-probe.yml']
   workflow_dispatch:
 permissions:

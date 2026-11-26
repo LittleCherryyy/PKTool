@@ -17,8 +17,68 @@
 
 namespace pktool::ui {
 using namespace detail;
+namespace visual=transport_visual;
 namespace {
 constexpr size_t kMaxSave = 160 * 1024;
+struct ConsoleScreen {int x,y,w,h;};
+ConsoleScreen drawLinkConsole(gfx::Canvas& c,visual::Console model,bool source) {
+    const int x=source?9:164;
+    const Color black=rgb(45,44,56),gray=rgb(171,175,162),purple=rgb(102,70,164);
+    const Color blue=rgb(104,155,193),burgundy=rgb(141,43,82);
+    auto dpad=[&](int cx,int cy){c.fillRect(cx-10,cy-3,21,7,black);c.fillRect(cx-3,cy-10,7,21,black);};
+    if(model==visual::Console::Bank) {
+        c.roundRect(x+8,39,66,102,kBorder,rgb(62,97,138),2);
+        for(int i=0;i<3;++i) {
+            c.roundRect(x+14,105+i*10,54,8,kBorder,kPanelDark);
+            c.fillCircle(x+19,109+i*10,2,kGreen);
+        }
+        c.roundRect(x+13,47,56,55,kPanelDark,rgb(195,218,231));
+        return {x+16,50,50,49};
+    }
+    if(model==visual::Console::DMG) {
+        c.roundRect(x+6,29,70,123,kBorder,gray,2);
+        c.roundRect(x+12,36,58,65,black,rgb(103,105,118));
+        c.hline(x+16,41,50,burgundy);c.fillCircle(x+16,51,2,kRed);
+        c.fillRect(x+20,45,45,49,rgb(181,202,133));
+        dpad(x+24,117);c.fillCircle(x+60,110,5,burgundy);c.fillCircle(x+51,121,5,burgundy);
+        c.fillRect(x+30,135,8,3,black);c.fillRect(x+42,135,8,3,black);
+        for(int i=0;i<4;++i)c.vline(x+61+i*2,136,8,rgb(116,121,115));
+        return {x+20,45,45,49};
+    }
+    if(model==visual::Console::GBCPurple) {
+        c.roundRect(x+9,29,64,123,kBorder,purple,2);
+        c.roundRect(x+14,35,54,61,black,black);
+        c.fillRect(x+18,39,46,48,rgb(220,235,208));
+        c.hline(x+21,91,9,kRed);c.hline(x+32,91,9,kYellow);c.hline(x+43,91,9,kGreen);
+        dpad(x+26,113);c.fillCircle(x+60,109,5,black);c.fillCircle(x+52,120,5,black);
+        c.fillRect(x+31,131,7,3,black);c.fillRect(x+41,131,7,3,black);
+        for(int i=0;i<4;++i)c.hline(x+48,139+i*2,15,black);
+        return {x+18,39,46,48};
+    }
+    if(model==visual::Console::GBASP) {
+        // Open clamshell: screen in lid, hinge, separate control deck.
+        c.roundRect(x+7,27,70,71,kBorder,blue,2);
+        c.roundRect(x+12,33,60,59,black,black);
+        c.fillRect(x+16,37,52,45,rgb(205,229,210));
+        c.hline(x+25,86,35,blue);
+        c.roundRect(x+5,97,74,53,kBorder,blue,2);
+        c.fillRect(x+9,95,66,5,black);
+        dpad(x+22,117);c.fillCircle(x+65,110,5,black);c.fillCircle(x+56,121,5,black);
+        c.fillRect(x+32,137,8,3,black);c.fillRect(x+44,137,8,3,black);
+        c.fillCircle(x+70,143,2,kGreen);
+        return {x+16,37,52,45};
+    }
+    // AGB-001 is horizontal, never the clamshell.
+    c.roundRect(x,54,87,63,kBorder,rgb(79,77,161),2);
+    c.fillRect(x+4,54,12,3,gray);c.fillRect(x+71,54,12,3,gray);
+    c.roundRect(x+18,59,51,51,black,black);
+    c.fillRect(x+21,63,45,39,rgb(205,229,210));
+    c.fillRect(x+6,80,12,4,black);c.fillRect(x+10,76,4,12,black);
+    c.fillCircle(x+79,75,4,black);c.fillCircle(x+74,86,4,black);
+    c.fillRect(x+6,98,6,2,black);c.fillRect(x+6,103,6,2,black);
+    c.fillCircle(x+75,106,2,kGreen);
+    return {x+21,63,45,39};
+}
 void transferBall(gfx::Canvas& c,int x,int y,int radius) {
     c.fillCircle(x,y,radius,kText);
     for(int dy=-radius;dy<0;++dy)
@@ -208,6 +268,7 @@ void App::openTransporter() {
 }
 void App::showTransportSaveList(bool source,const std::string& message,const std::string& focus) {
     transportConfirm_=false;transportAccepted_=false;transportBankDest_=false;
+    transportDestVisual_={};
     transportSave_.reset();transportReview_.reset();
     std::vector<uint8_t>().swap(transportDestBytes_);
     transportDest_.clear();
@@ -215,7 +276,7 @@ void App::showTransportSaveList(bool source,const std::string& message,const std
     transportRows_.clear();transportNotes_.clear();transportPositions_.clear();
     transportMons_.clear();transportBoxSpecies_.clear();transportLoadBox_=-1;
     if(source) {
-        transportBankSource_=false;
+        transportBankSource_=false;transportSourceVisual_={};
         std::vector<uint8_t>().swap(transportSourceBytes_);
         transportSource_.clear();transportSelected_.clear();
     }
@@ -315,6 +376,7 @@ void App::openTransportBankSource() {
     }
     if(rows.empty()) {transportMessage_="No Gen I/II Pokemon in Bank";return;}
     transportSource_=path;transportSourceBytes_=std::move(bytes);transportBankSource_=true;
+    transportSourceVisual_={visual::Edition::Bank,false};
     transportSave_.reset();transportSelected_.clear();
     transportRows_=std::move(rows);transportPositions_=std::move(positions);transportMons_=std::move(mons);
     transportLanguage_=0;transportCursor_=transportScroll_=0;
@@ -338,6 +400,7 @@ void App::openTransportBank() {
         if(!target.format(b,s)) positions.emplace_back(b,s);
     if(positions.size()<transportSelected_.size()) {transportMessage_="Not enough free Bank slots";return;}
     transportDest_=path;transportDestBytes_=std::move(bytes);transportBankDest_=true;
+    transportDestVisual_={visual::Edition::Bank,false};
     transportPositions_=std::move(positions);transportRows_.clear();
     for(auto pos:transportPositions_) transportRows_.push_back(slotLabel(pos.first,pos.second)+" Empty");
     transportRows_.resize(transportRows_.size()-transportSelected_.size()+1);
@@ -392,11 +455,47 @@ void App::transporterSelectSave(bool source) {
         transportLanguage_=loaded->language()==1?1:languageHint(path);
     } else { transportDest_=path; transportDestBytes_=std::move(bytes); }
     transportSave_=std::move(loaded);
+    transportLoadPath_=path;
+    prepareTransportEdition(source);
+}
+void App::prepareTransportEdition(bool source) {
+    const auto family=transportSave_->game();
+    const bool jp=transportSave_->language()==1;
+    auto& selected=source?transportSourceVisual_:transportDestVisual_;
+    const auto cached=std::find_if(transportVisualChoices_.begin(),transportVisualChoices_.end(),[&](const auto& item){
+        return item.path==transportLoadPath_&&item.family==family&&item.visual.japanese==jp;
+    });
+    if(cached!=transportVisualChoices_.end()&&visual::contains(visual::options(family,jp),cached->visual.edition)) {
+        selected=cached->visual;beginTransportBoxes(source);return;
+    }
+    transportEditionResolution_=visual::resolve(transportLoadPath_,family,jp);
+    if(transportEditionResolution_.choices.size()==1) {
+        selected={transportEditionResolution_.choices.front(),jp};beginTransportBoxes(source);return;
+    }
+    transportEditionSource_=source;transportPhase_=TransportPhase::Edition;
+    transportRows_.clear();transportPositions_.clear();transportCursor_=transportScroll_=0;
+    for(const auto e:transportEditionResolution_.choices) {
+        if(e==transportEditionResolution_.suggested) transportCursor_=static_cast<int>(transportRows_.size());
+        transportRows_.push_back(visual::label({e,jp}));
+    }
+    transportMessage_=visual::evidenceName(transportEditionResolution_.evidence);
+}
+void App::confirmTransportEdition() {
+    if(transportCursor_<0||transportCursor_>=static_cast<int>(transportEditionResolution_.choices.size())) return;
+    const auto choice=visual::VisualEdition{transportEditionResolution_.choices[transportCursor_],transportSave_->language()==1};
+    const auto family=transportSave_->game();
+    transportVisualChoices_.erase(std::remove_if(transportVisualChoices_.begin(),transportVisualChoices_.end(),
+        [&](const auto& item){return item.path==transportLoadPath_;}),transportVisualChoices_.end());
+    transportVisualChoices_.push_back({transportLoadPath_,family,choice});
+    (transportEditionSource_?transportSourceVisual_:transportDestVisual_)=choice;
+    beginTransportBoxes(transportEditionSource_);
+}
+void App::beginTransportBoxes(bool source) {
     transportRows_.clear();transportPositions_.clear();
     transportMons_.clear();transportBoxSpecies_.clear();
     transportBoxSlots_=transportSave_->boxSlotCount();
     if(!source) transportBoxSpecies_.resize(transportSave_->boxCount()*transportBoxSlots_);
-    transportLoadPath_=path;transportLoadSource_=source;transportLoadBox_=0;
+    transportLoadSource_=source;transportLoadBox_=0;
     transportCursor_=transportScroll_=0;
 }
 void App::tickTransportBoxes() {
@@ -516,6 +615,17 @@ void App::tickTransportPreview() {
     transportCursor_=transportScroll_=0;
 }
 void App::updateTransporter(const Input& in) {
+    if(transportPhase_==TransportPhase::Edition) {
+        if(in.pressed&kKeyB) {
+            const auto path=transportLoadPath_;
+            showTransportSaveList(transportEditionSource_,"Choose another save",path);return;
+        }
+        const int count=static_cast<int>(transportRows_.size());
+        if(in.repeated&kKeyUp) transportCursor_=wrap(transportCursor_-1,count);
+        if(in.repeated&kKeyDown) transportCursor_=wrap(transportCursor_+1,count);
+        if(in.pressed&kKeyA) confirmTransportEdition();
+        return;
+    }
     if(transportPhase_==TransportPhase::History) {
         if(in.pressed&kKeyB) {showTransportSaveList(true);return;}
         if(!transportHistoryPaths_.empty()&&(in.pressed&(kKeyLeft|kKeyRight))) {
@@ -639,6 +749,7 @@ void App::updateTransporter(const Input& in) {
     }
     if(!activate || count==0) return;
     switch(transportPhase_) {
+        case TransportPhase::Edition:break;
         case TransportPhase::History:break;
         case TransportPhase::Source: pending_=Pending::TransferLoadSource;break;
         case TransportPhase::SourceMon: {
@@ -702,38 +813,35 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
     const Color gba=rgb(205,229,210),ink=rgb(30,54,35);
     top.clear(kBackground);bottom.clear(kBackground);
     top.text(kFontLarge,0,8,256,Align::Center,stage,kText);
-    // Two recognizable consoles, linked by a visible cable with a moving ball.
-    top.roundRect(9,32,83,120,kBorder,generation==1?rgb(170,174,160):rgb(105,91,165),2);
-    top.roundRect(17,39,67,69,kPanelDark,kPanelDark);
-    top.fillRect(21,43,59,61,gb);
-    top.fillRect(26,123,21,5,kPanelDark);top.fillRect(34,115,5,21,kPanelDark);
-    top.fillCircle(71,119,5,kRed);top.fillCircle(62,130,5,kRed);
-    top.roundRect(164,53,87,80,kBorder,rgb(83,92,165),2);
-    top.roundRect(173,59,69,57,kPanelDark,kPanelDark);
-    top.fillRect(176,62,63,51,gba);
-    top.fillRect(169,120,15,3,kPanelDark);top.fillRect(175,115,3,13,kPanelDark);
-    top.fillCircle(244,119,3,kRed);
+    // VPT030: visual edition controls the model; the next milestone
+    // replaces the old generation-level sprite packs and cable movement.
+    const auto srcModel=visual::console(transportSourceVisual_.edition);
+    const auto dstModel=visual::console(transportDestVisual_.edition);
+    const auto src=drawLinkConsole(top,srcModel,true);
+    const auto dst=drawLinkConsole(top,dstModel,false);
     top.fillRect(92,83,72,5,kPanelDark);top.hline(92,85,72,kMuted);
     top.fillRect(90,79,5,13,kMuted);top.fillRect(161,79,5,13,kMuted);
     if(count) {
         const auto& mon=transportResultMons_[idx];
         const auto& original=idx<transportEntries_.size()?transportEntries_[idx].mon:mon;
-        if(departure) drawTransportSprite(top,original,21,43,59,61,generation);
-        else if(arrival) drawTransportSprite(top,mon,176,62,63,51,3);
+        if(departure) drawTransportSprite(top,original,src.x,src.y,src.w,src.h,generation);
+        else if(arrival) drawTransportSprite(top,mon,dst.x,dst.y,dst.w,dst.h,3);
         if(travel) {
             const int x=94+static_cast<int>((phase-60)*68/89);
             top.hline(94,85,x-93,kAccent);
             transferBall(top,x,85,8);
         } else if(change) {
             const int radius=5+static_cast<int>((phase-150)/5);
-            top.circle(207,87,radius+5,kYellow);
-            transferBall(top,207,87,radius);
+            top.circle(dst.x+dst.w/2,dst.y+dst.h/2,radius+5,kYellow);
+            transferBall(top,dst.x+dst.w/2,dst.y+dst.h/2,radius);
         }
-        if(departure) top.brackets(18,40,65,67,kYellow,6);
-        if(arrival) top.brackets(174,60,67,55,kGreen,6);
-        top.text(kFontSmall,9,159,83,Align::Center,generation==1?"GAME BOY":"GAME BOY COLOR",kMuted);
-        top.text(kFontSmall,164,144,87,Align::Center,"GAME BOY ADVANCE",kMuted);
-        top.text(kFontSmall,0,175,256,Align::Center,finale?"Ready to write both saves":std::to_string(idx+1)+" / "+std::to_string(count)+" Pokemon",kAccent);
+        if(departure) top.brackets(src.x-2,src.y-2,src.w+4,src.h+4,kYellow,6);
+        if(arrival) top.brackets(dst.x-2,dst.y-2,dst.w+4,dst.h+4,kGreen,6);
+        top.text(kFontSmall,2,155,96,Align::Center,visual::consoleName(srcModel),kMuted);
+        top.text(kFontSmall,159,155,96,Align::Center,visual::consoleName(dstModel),kMuted);
+        top.text(kFontSmall,2,166,96,Align::Center,visual::label(transportSourceVisual_),kText);
+        top.text(kFontSmall,159,166,96,Align::Center,visual::label(transportDestVisual_),kText);
+        top.text(kFontSmall,0,180,256,Align::Center,finale?"Ready to write both saves":std::to_string(idx+1)+" / "+std::to_string(count)+" Pokemon",kAccent);
 
         // Lower screen focuses on one Pokemon at a time, with a larger
         // nearest-neighbour sprite and a deliberate reveal of the GBA art.
@@ -763,6 +871,23 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
 
 void App::drawTransporter(Canvas& top,Canvas& bottom) {
     if(transportAnimating_) {drawTransportAnimation(top,bottom);return;}
+    if(transportPhase_==TransportPhase::Edition) {
+        drawChrome(top,"Confirm game edition","VISUAL ONLY",kAccent);
+        top.roundRect(5,35,246,137,kBorder,kPanel);
+        marqueeActive_|=drawMarquee(top,8,43,240,Align::Center,io::fileName(transportLoadPath_),kText,frame_-marqueeStart_);
+        top.text(kFontSmall,8,63,240,Align::Center,transportMessage_,kYellow);
+        top.text(kFontSmall,8,82,240,Align::Center,"Save family cannot identify edition",kMuted);
+        if(!transportRows_.empty()) {
+            const auto e=transportEditionResolution_.choices[transportCursor_];
+            top.text(kFontLarge,8,106,240,Align::Center,visual::label({e,transportSave_->language()==1}),kText);
+            top.text(kFontSmall,8,132,240,Align::Center,visual::consoleName(visual::console(e)),kAccent);
+        }
+        top.text(kFontSmall,8,151,240,Align::Center,"Choice remembered until restart",kMuted);
+        bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
+        drawList(bottom,transportRows_,transportCursor_,transportScroll_,5,8,246,28,5);
+        drawHints(bottom,{{"A","Confirm"},{"+","Move"},{"B","Back"}},{kKeyA,0,kKeyB});
+        return;
+    }
     if(transportPhase_==TransportPhase::History) {
         drawChrome(top,"Transfer history","READ ONLY",kAccent);
         top.text(kFontLarge,0,39,256,Align::Center,transportHistoryPaths_.empty()?"No archived transfers":std::to_string(transportHistoryIndex_+1)+" / "+std::to_string(transportHistoryPaths_.size()),kText);
@@ -831,7 +956,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         const Color ink=rgb(30,54,35);
         top.clear(bg);bottom.clear(bg);
         top.rect(5,5,246,182,ink,2);
-        top.text(kFontLarge,10,10,236,Align::Center,transportBankSource_?"BANK - CLASSIC":gen==1?"GAME BOY - PC":"GAME BOY COLOR - PC",ink);
+        top.text(kFontLarge,10,10,236,Align::Center,transportBankSource_?"BANK - CLASSIC":visual::label(transportSourceVisual_)+" - PC",ink);
         drawTransportSprite(top,p,12,35,100,100,gen);
         marqueeActive_ |= drawMarquee(top,115,39,130,Align::Left,p.nickname,ink,frame_-marqueeStart_);
         top.text(kFontSmall,115,60,"Lv "+std::to_string(p.level),ink);
@@ -859,6 +984,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         top.clear(rgb(32,93,108));bottom.clear(rgb(66,129,103));
         top.text(kFontLarge,4,16,248,Align::Center,std::string(transportBankDest_?"BANK - BOX ":"GBA PC - BOX ")+twoDigits(box+1),kText);
         top.text(kFontSmall,4,40,248,Align::Center,slotLabel(box,pos.second)+" | "+std::to_string(transportSelected_.size())+" Pokemon",kText);
+        top.text(kFontSmall,4,56,248,Align::Center,visual::label(transportDestVisual_)+" | "+visual::consoleName(visual::console(transportDestVisual_.edition)),kText);
         top.text(kFontSmall,4,72,248,Align::Center,std::to_string(transportPositions_.size())+" free in PC",kText);
         top.text(kFontSmall,4,90,248,Align::Center,"Green starts fit the entire batch.",kText);
         marqueeActive_ |= drawMarquee(top,8,123,240,Align::Center,transportMessage_,kText,frame_-marqueeStart_);
@@ -886,6 +1012,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         marqueeActive_ |= drawMarquee(top,91,45,152,Align::Left,e.mon.nickname,kText,frame_-marqueeStart_);
         top.text(kFontSmall,91,65,152,Align::Left,e.ready?(e.returnedItem?"ITEM TO BAG":"READY"):"BLOCKED",e.ready?(e.returnedItem?kYellow:kGreen):kRed);
         marqueeActive_ |= drawMarquee(top,91,84,152,Align::Left,e.ready?(e.returnedItem?e.itemName+" x1":"Can transfer"):e.error,kText,frame_-marqueeStart_);
+        top.text(kFontSmall,9,109,238,Align::Center,visual::label(transportSourceVisual_)+" -> "+visual::label(transportDestVisual_),kAccent);
         if(!e.notes.empty()) marqueeActive_ |= drawMarquee(top,9,126,238,Align::Left,e.notes.front(),kMuted,frame_-marqueeStart_);
         marqueeActive_ |= drawMarquee(top,9,147,238,Align::Center,transportMessage_,transportAccepted_?kGreen:kYellow,frame_-marqueeStart_);
         bottom.clear(kBackground);
@@ -955,6 +1082,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
     }
     const char* phase="Select GB/GBC save";
     switch(transportPhase_) {
+        case TransportPhase::Edition:break;
         case TransportPhase::History:break;
         case TransportPhase::Source:break;
         case TransportPhase::SourceMon:phase="Select boxed Pokemon";break;

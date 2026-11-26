@@ -1,7 +1,7 @@
 name: VPT002 PCCS conversion probe
 on:
   push:
-    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history']
+    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history', 'dev/vpt030-link-experience']
     paths: ['experiments/pccs/**', '.github/workflows/vpt002-conversion.yml']
   workflow_dispatch:
 permissions:
@@ -26,6 +26,10 @@ jobs:
         run: |
           cmake -S . -B build-vpt -DCMAKE_BUILD_TYPE=Release
           cmake --build build-vpt --target pktool_core -j2
+      - name: Test visual edition resolver
+        run: |
+          c++ -std=c++17 -O2 -Wall -Wextra -I. experiments/pccs/test_transport_visual.cpp build-vpt/libpktool_core.a -o "$RUNNER_TEMP/vpt030-visual"
+          "$RUNNER_TEMP/vpt030-visual"
       - name: Compile real read-only conversion probe
         run: |
           c++ -std=c++17 -O2 -Wall -Wextra -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \

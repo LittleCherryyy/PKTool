@@ -7,6 +7,7 @@
 #include "core/bank/bank.h"
 #ifdef VPT_TRANSPORTER_PREVIEW
 #include "experiments/pccs/transfer_journal.h"
+#include "experiments/pccs/transport_visual.h"
 #endif
 #include "core/io/settings.h"
 #include "core/legality/legality.h"
@@ -110,6 +111,8 @@ public:
 #ifdef VPT_TRANSPORTER_PREVIEW
     bool transporterBusy() const {return bool(transportScan_)||transportLoadBox_>=0||bool(transportBatch_);}
     const std::vector<std::string>& transporterRows() const {return transportRows_;}
+    bool transporterChoosingEdition() const {return transportPhase_==TransportPhase::Edition;}
+    transport_visual::VisualEdition transporterVisual(bool source) const {return source?transportSourceVisual_:transportDestVisual_;}
 #endif
     void setAnimations(bool on) { settings_.animations = on; }
 
@@ -198,7 +201,15 @@ private:
     std::string transportLoadPath_;
     void transporterPreview();
     void tickTransportPreview();
-    enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review, History };
+    enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review, History, Edition };
+    struct VisualChoice {std::string path;saves::Game family;transport_visual::VisualEdition visual;};
+    std::vector<VisualChoice> transportVisualChoices_;
+    transport_visual::VisualEdition transportSourceVisual_,transportDestVisual_;
+    transport_visual::Resolution transportEditionResolution_;
+    bool transportEditionSource_=true;
+    void prepareTransportEdition(bool source);
+    void confirmTransportEdition();
+    void beginTransportBoxes(bool source);
     bool transportBankDest_=false,transportBankSource_=false;
     int transportResultPage_=0;
     std::vector<std::string> transportHistoryPaths_;
