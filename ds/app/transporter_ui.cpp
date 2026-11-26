@@ -156,7 +156,7 @@ void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
             for(size_t i=start;i<std::min(start+10,transportResultMons_.size());++i) {
                 const int x=5+static_cast<int>((i-start)%5)*50,y=18+static_cast<int>((i-start)/5)*42;
                 bottom.roundRect(x,y,46,40,kBorder,kPanel);
-                drawTransportSprite(bottom,transportResultMons_[i],x+2,y+1,42,27,3);
+                drawTransportSprite(bottom,transportResultMons_[i],x+2,y+1,42,27,3,false,transportDestVisual_);
                 bottom.text(kFontSmall,x,y+27,46,Align::Center,transportResultMons_[i].nickname,kText);
             }
         } else bottom.text(kFontSmall,0,53,256,Align::Center,"Original backups retained.",kText);
@@ -778,9 +778,13 @@ void App::updateTransporter(const Input& in) {
             break; // No journal persistence in the preview build.
     }
 }
-void App::drawTransportSprite(Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t gen,bool enlarge) {
-    const char* kind=gen==1?"transport-gb":gen==2?(mon.shiny?"transport-gbc-shiny":"transport-gbc"):(mon.shiny?"transport-gba-shiny":"transport-gba");
-    auto im=sprites_.get(kind,mon.species);
+void App::drawTransportSprite(Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t gen,bool enlarge,visual::VisualEdition edition) {
+    // Resolve the artwork from the selected save edition, not the PK3 origin.
+    // Old generation packs remain a fallback for missing/partial local art.
+    const char* legacy=gen==1?"transport-gb":gen==2?(mon.shiny?"transport-gbc-shiny":"transport-gbc"):(mon.shiny?"transport-gba-shiny":"transport-gba");
+    const char* exact=visual::spriteKind(edition,mon.shiny);
+    auto im=sprites_.get(exact?exact:legacy,mon.species);
+    if(!im.pixels&&exact) im=sprites_.get(legacy,mon.species);
     if(!im.pixels) im=sprites_.get(mon.shiny?"front-shiny":"front",mon.species);
     if(!im.pixels) {transferBall(c,x+w/2,y+h/2,9);return;}
     const int scale=std::max(1,std::max((im.width+w-1)/w,(im.height+h-1)/h));
@@ -813,8 +817,8 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
     const Color gba=rgb(205,229,210),ink=rgb(30,54,35);
     top.clear(kBackground);bottom.clear(kBackground);
     top.text(kFontLarge,0,8,256,Align::Center,stage,kText);
-    // VPT030: visual edition controls the model; the next milestone
-    // replaces the old generation-level sprite packs and cable movement.
+    // VPT031: sprites now follow the confirmed source and destination editions.
+    // The cable movement and transformation timeline remain VPT032 work.
     const auto srcModel=visual::console(transportSourceVisual_.edition);
     const auto dstModel=visual::console(transportDestVisual_.edition);
     const auto src=drawLinkConsole(top,srcModel,true);
@@ -824,8 +828,8 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
     if(count) {
         const auto& mon=transportResultMons_[idx];
         const auto& original=idx<transportEntries_.size()?transportEntries_[idx].mon:mon;
-        if(departure) drawTransportSprite(top,original,src.x,src.y,src.w,src.h,generation);
-        else if(arrival) drawTransportSprite(top,mon,dst.x,dst.y,dst.w,dst.h,3);
+        if(departure) drawTransportSprite(top,original,src.x,src.y,src.w,src.h,generation,false,transportSourceVisual_);
+        else if(arrival) drawTransportSprite(top,mon,dst.x,dst.y,dst.w,dst.h,3,false,transportDestVisual_);
         if(travel) {
             const int x=94+static_cast<int>((phase-60)*68/89);
             top.hline(94,85,x-93,kAccent);
@@ -853,12 +857,12 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
             transferBall(bottom,x,63,13);
         } else if(change) {
             const int t=static_cast<int>(phase-150);
-            drawTransportSprite(bottom,t<15?original:mon,54,10,148,112,t<15?generation:3,true);
+            drawTransportSprite(bottom,t<15?original:mon,54,10,148,112,t<15?generation:3,true,t<15?transportSourceVisual_:transportDestVisual_);
             // One smooth, short transition (not repeated flashing).
             const int alpha=std::max(0,20-std::abs(t-15)*2);
             bottom.blendRect(10,7,236,118,rgb(255,255,255),alpha);
         } else {
-            drawTransportSprite(bottom,arrival?mon:original,54,10,148,112,arrival?3:generation,true);
+            drawTransportSprite(bottom,arrival?mon:original,54,10,148,112,arrival?3:generation,true,arrival?transportDestVisual_:transportSourceVisual_);
         }
         bottom.text(kFontLarge,8,130,240,Align::Center,finale?"All Pokemon prepared":arrival?mon.nickname:original.nickname,kText);
         const std::string detail=finale?"Saving begins after the animation":departure?"Original sprite":travel?"Link cable connected":change?"GB / GBC to GBA":"GBA sprite ready";
@@ -957,7 +961,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         top.clear(bg);bottom.clear(bg);
         top.rect(5,5,246,182,ink,2);
         top.text(kFontLarge,10,10,236,Align::Center,transportBankSource_?"BANK - CLASSIC":visual::label(transportSourceVisual_)+" - PC",ink);
-        drawTransportSprite(top,p,12,35,100,100,gen);
+        drawTransportSprite(top,p,12,35,100,100,gen,false,transportSourceVisual_);
         marqueeActive_ |= drawMarquee(top,115,39,130,Align::Left,p.nickname,ink,frame_-marqueeStart_);
         top.text(kFontSmall,115,60,"Lv "+std::to_string(p.level),ink);
         top.text(kFontSmall,115,80,slotLabel(transportPositions_[transportCursor_].first,transportPositions_[transportCursor_].second),ink);
@@ -1008,7 +1012,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         const int blocked=static_cast<int>(transportEntries_.size())-ready;
         drawChrome(top,"Transfer review",transportAccepted_?"READY":"CHECK",transportAccepted_?kGreen:kYellow);
         top.roundRect(5,35,246,137,kBorder,kPanel);
-        drawTransportSprite(top,e.mon,10,46,76,77,e.mon.format);
+        drawTransportSprite(top,e.mon,10,46,76,77,e.mon.format,false,transportSourceVisual_);
         marqueeActive_ |= drawMarquee(top,91,45,152,Align::Left,e.mon.nickname,kText,frame_-marqueeStart_);
         top.text(kFontSmall,91,65,152,Align::Left,e.ready?(e.returnedItem?"ITEM TO BAG":"READY"):"BLOCKED",e.ready?(e.returnedItem?kYellow:kGreen):kRed);
         marqueeActive_ |= drawMarquee(top,91,84,152,Align::Left,e.ready?(e.returnedItem?e.itemName+" x1":"Can transfer"):e.error,kText,frame_-marqueeStart_);
