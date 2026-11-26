@@ -16,6 +16,25 @@ int main() {
     assert(v::spriteSet({E::Gold,false})!=v::spriteSet({E::Silver,false}));
     assert(v::spriteSet({E::Emerald,false})!=v::spriteSet({E::Ruby,false}));
     assert(v::spriteSet({E::Bank,false})==S::BankClassic&&v::spriteSet({E::Bank,false},true)==S::BankPK3);
+
+    // VPT031: edition-specific sheets must not silently alias other editions.
+    assert(std::string(v::spriteKind({E::Red,true}))=="transport-redgreen-jp");
+    assert(std::string(v::spriteKind({E::Red,false}))=="transport-redblue-int");
+    assert(std::string(v::spriteKind({E::Blue,true}))=="transport-blue-jp");
+    assert(std::string(v::spriteKind({E::Yellow,false}))=="transport-yellow");
+    assert(std::string(v::spriteKind({E::Gold,false},true))=="transport-gold-shiny");
+    assert(std::string(v::spriteKind({E::Silver,false},true))=="transport-silver-shiny");
+    assert(std::string(v::spriteKind({E::Crystal,false},false))=="transport-crystal");
+    assert(std::string(v::spriteKind({E::Ruby,false},false))=="transport-rs");
+    assert(std::string(v::spriteKind({E::Sapphire,false},true))=="transport-rs-shiny");
+    assert(std::string(v::spriteKind({E::FireRed,false},true))=="transport-frlg-shiny");
+    assert(std::string(v::spriteKind({E::LeafGreen,false}))=="transport-frlg");
+    assert(std::string(v::spriteKind({E::Emerald,false}))=="transport-emerald");
+    assert(v::spriteKind({E::Unknown,false})==nullptr);
+    assert(v::spriteKind({E::Bank,false})==nullptr);
+    assert(v::spriteKind({E::Bank,false},false,true)==nullptr);
+    assert(std::string(v::spriteKind({E::Blue,false}))==std::string(v::spriteKind({E::Red,false})));
+    assert(std::string(v::spriteKind({E::Ruby,false}))!=std::string(v::spriteKind({E::Emerald,false})));
     assert(v::options(G::RedBlue,true).size()==3&&v::options(G::RedBlue,false).size()==2);
     assert(v::filenameHint("/Gold/Pokemon - Silver Version (USA).sav",v::options(G::GoldSilver,false))==E::Silver);
     assert(v::filenameHint("Pokémon - Fire Red (USA).sav",v::options(G::FireRedLeafGreen,false))==E::FireRed);
