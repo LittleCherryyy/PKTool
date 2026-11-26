@@ -18,6 +18,7 @@
 #include "core/util/bytes.h"
 #include "core/util/crc16.h"
 #include "tests/fake_saves.h"
+#include "tests/fake_gb_saves.h"
 #include "tests/fixtures.h"
 #include "tests/test.h"
 
@@ -201,4 +202,24 @@ TEST(rescan_reads_only_the_files_that_changed) {
     again = saves::findPokemonSaves(dir, 1, &first);
     CHECK_EQ(again.size(), 2u);
     CHECK(io::readStats().bytes > 0 && io::readStats().bytes < 8 * 1024);
+}
+
+TEST(transporter_incremental_scan_filters_ds_and_reuses_unchanged_summaries) {
+    const auto dir=makeDir();
+    CHECK(io::makeDirectories(io::joinPath(dir,"sub")));
+    CHECK(io::safeWriteFile(io::joinPath(dir,"red.sav"),fakegb::blankGen1(false,false))==io::WriteResult::Ok);
+    CHECK(io::safeWriteFile(io::joinPath(dir,"sub/emerald.sav"),fake::blankGen3(Game::Emerald))==io::WriteResult::Ok);
+    CHECK(io::safeWriteFile(io::joinPath(dir,"diamond.sav"),fake::blankGen4(fake::kDp))==io::WriteResult::Ok);
+    CHECK(io::safeWriteFile(io::joinPath(dir,"bad.sav"),std::vector<uint8_t>(8192,0))==io::WriteResult::Ok);
+    io::resetReadStats();
+    saves::IncrementalSaveScan scan(dir,3,3,{});
+    int frames=0;
+    while(!scan.step()) {++frames;CHECK(frames<100);}
+    auto found=scan.take();
+    CHECK_EQ(found.size(),2u);CHECK_EQ(io::readStats().opens,2u);
+    CHECK(frames>=2);CHECK_EQ(scan.examined(),4u);
+    io::resetReadStats();
+    saves::IncrementalSaveScan cached(dir,3,3,found);
+    while(!cached.step()) {}
+    CHECK_EQ(cached.take().size(),2u);CHECK_EQ(io::readStats().opens,0u);
 }

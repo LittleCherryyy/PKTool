@@ -739,6 +739,13 @@ int App::bobOffset() const {
 
 bool App::updateFrame(const Input& rawInput) {
 #ifdef VPT_TRANSPORTER_PREVIEW
+    if(screen_==Screen::Transporter && transporterBusy()) {
+        if(rawInput.pressed&kKeyB) cancelTransportBusy();
+        else if(transportScan_) tickTransportScan();
+        else tickTransportBoxes();
+        redraw_=true;
+        return true;
+    }
     // Animation is a pre-commit presentation; no writes until it finishes.
     if(transportAnimating_) {
         if(frame_-transportAnimationStart_>=90 || (rawInput.pressed&(kKeyA|kKeyStart))) {
@@ -954,6 +961,8 @@ void App::runPending() {
             createPokemon();
             break;
 #ifdef VPT_TRANSPORTER_PREVIEW
+        case Pending::TransferLoadSource: transporterSelectSave(true);break;
+        case Pending::TransferLoadDestination: transporterSelectSave(false);break;
         case Pending::TransferPreview: transporterPreview();break;
         case Pending::TransferCommit: commitTransporter();break;
 #endif
@@ -2464,6 +2473,7 @@ void App::draw(Canvas& top, Canvas& bottom) {
                            : pending_ == Pending::Create   ? "Creating..."
                            : pending_ == Pending::GbaBackup ? "Reading GBA cartridge..."
 #ifdef VPT_TRANSPORTER_PREVIEW
+                           : pending_ == Pending::TransferLoadSource || pending_ == Pending::TransferLoadDestination ? "Reading save..."
                            : pending_ == Pending::TransferPreview ? "Checking transfer..."
                            : pending_ == Pending::TransferCommit ? "Writing journal..."
 #endif

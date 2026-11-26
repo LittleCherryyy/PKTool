@@ -1,4 +1,7 @@
 #include "core/saves/save_probe.h"
+#include <algorithm>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "core/io/file_io.h"
 #include "core/pokemon/entity.h"
@@ -125,6 +128,86 @@ std::vector<SaveSummary> findPokemonSaves(const std::string& root, int maxDepth,
     return found;
 }
 
+struct IncrementalSaveScan::State {
+    struct Folder {std::string path; int depth;};
+    std::vector<Folder> folders;
+    Folder current;
+    DIR* dir=nullptr;
+    std::vector<SaveSummary> previous,results;
+    uint8_t maxGeneration=3;
+    size_t examined=0;
+    ~State(){if(dir) closedir(dir);}
+};
+IncrementalSaveScan::IncrementalSaveScan(const std::string& root,int maxDepth,uint8_t maxGeneration,
+                                        const std::vector<SaveSummary>& previous)
+    :state_(new State) {
+    state_->folders.push_back({root,maxDepth});
+    state_->maxGeneration=maxGeneration;state_->previous=previous;
+}
+IncrementalSaveScan::~IncrementalSaveScan()=default;
+size_t IncrementalSaveScan::examined() const {return state_->examined;}
+size_t IncrementalSaveScan::found() const {return state_->results.size();}
+bool IncrementalSaveScan::step() {
+    auto& s=*state_;
+    for(int budget=0;budget<24;++budget) {
+        if(!s.dir) {
+            if(s.folders.empty()) return true;
+            s.current=std::move(s.folders.back());s.folders.pop_back();
+            s.dir=opendir(s.current.path.c_str());
+            if(!s.dir) continue;
+        }
+        auto* e=readdir(s.dir);
+        if(!e) {closedir(s.dir);s.dir=nullptr;continue;}
+        std::string name=e->d_name;
+        if(name.empty()||name[0]=='.'||name[0]=='_') continue;
+        bool sav=false;
+        if(name.size()>=4) {
+            auto ext=name.substr(name.size()-4);
+            for(auto& c:ext) if(c>='A'&&c<='Z') c=static_cast<char>(c-'A'+'a');
+            sav=ext==".sav";
+        }
+        const auto path=io::joinPath(s.current.path,name);
+        bool directory=false;
+        bool known=false;
+#if defined(DT_DIR) && defined(DT_REG)
+        if(e->d_type==DT_DIR){directory=true;known=true;}
+        else if(e->d_type==DT_REG) known=true;
+#endif
+        // At maximum depth, ordinary non-save files need no FAT stat at all.
+        if(!known && (sav||s.current.depth>0)) {
+            struct stat st;
+            if(stat(path.c_str(),&st)!=0) continue;
+            directory=S_ISDIR(st.st_mode);known=true;
+        }
+        if(directory) {
+            if(s.current.depth>0) s.folders.push_back({path,s.current.depth-1});
+            continue;
+        }
+        if(!sav) continue;
+        ++s.examined;
+        long size=0,modified=0;
+        if(!io::fileStamp(path,size,modified)||!plausibleSize(size)) continue;
+        if(s.maxGeneration<=3 && size==0x80000) continue; // no DS save I/O
+        const auto cached=std::find_if(s.previous.begin(),s.previous.end(),[&](const SaveSummary& old){
+            return old.path==path&&old.fileSize==size&&old.modified==modified;
+        });
+        if(cached!=s.previous.end()) {
+            if(gameGeneration(cached->game)<=s.maxGeneration) s.results.push_back(*cached);
+            continue;
+        }
+        SaveSummary summary;
+        if(probeSave(path,summary)&&gameGeneration(summary.game)<=s.maxGeneration) {
+            summary.fileSize=size;summary.modified=modified;s.results.push_back(std::move(summary));
+        }
+        return false; // one uncached candidate per frame
+    }
+    return !s.dir&&s.folders.empty();
+}
+std::vector<SaveSummary> IncrementalSaveScan::take() {
+    auto& r=state_->results;
+    std::sort(r.begin(),r.end(),[](const SaveSummary& a,const SaveSummary& b){return a.path<b.path;});
+    return std::move(r);
+}
 const char* versionName(uint8_t version) {
     switch (version) {
         case 1: return "Sapphire";

@@ -31,6 +31,7 @@ bool press(ui::App& app,uint32_t key) {
     static std::array<uint16_t,256*192> top{},bottom{};
     bool running=app.update({key,key,false,0,0});
     app.update({});
+    for(int i=0;i<10000&&app.transporterBusy();++i) app.update({});
     gfx::Canvas t(top.data()),b(bottom.data());app.draw(t,b);
     return running;
 }
@@ -207,6 +208,29 @@ int main() {
         REQUIRE(dst->readBoxSlot(0,1,raw.data())==sv::SlotState::Empty);
         REQUIRE(dst->readBoxSlot(0,2,raw.data())==sv::SlotState::Valid&&pk::pk3::toPokemon(raw.data(),80).species==152);
         std::puts("PASS: Silver to Ruby mixed review, explicit X subset, item returned to Bag, blocked Pokemon retained");
+    }
+    // A stale or empty source never drops the user out of the transporter.
+    {
+        const auto rejectRoot=root+"/reject";
+        REQUIRE(io::makeDirectories(rejectRoot));
+        const auto empty=rejectRoot+"/a-empty.sav", good=rejectRoot+"/b-crystal.sav";
+        auto blank=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Crystal));REQUIRE(blank);
+        REQUIRE(put(empty,blank->data())&&put(good,sb));
+        ui::Config rc=cfg;rc.scanRoot=rejectRoot;rc.dataDir=rejectRoot+"/PKTOOL";
+        ui::App app(rc);
+        press(app,ui::kKeyY);
+        REQUIRE(app.transporterRows().size()==2);
+        press(app,ui::kKeyA);
+        REQUIRE(std::string(app.screenName())=="Transporter"&&app.transporterRows().size()==2);
+        press(app,ui::kKeyDown);press(app,ui::kKeyA);
+        REQUIRE(app.transporterRows().size()==1);
+        press(app,ui::kKeyB);
+        REQUIRE(std::string(app.screenName())=="Transporter"&&app.transporterRows().size()==2);
+        REQUIRE(put(good,{1,2,3}));
+        press(app,ui::kKeyA);
+        REQUIRE(std::string(app.screenName())=="Transporter"&&app.transporterRows().size()==2);
+        press(app,ui::kKeyY);
+        REQUIRE(app.transporterRows().size()==1);
     }
     // Verify the startup UI refuses a partially created journal too.
     REQUIRE(put(j+".new",{1,2,3}));

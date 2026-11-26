@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -32,6 +34,22 @@ bool probeSaveFull(const std::string& path, SaveSummary& out);
 // modification time match an entry of `previous` (an earlier scan) are not read again.
 std::vector<SaveSummary> findPokemonSaves(const std::string& root, int maxDepth,
                                           const std::vector<SaveSummary>* previous = nullptr);
+
+// Cooperative scan: bounded directory work and at most one candidate probe
+// per step. Summaries are hints, never authorization to edit a save.
+class IncrementalSaveScan {
+public:
+    IncrementalSaveScan(const std::string& root,int maxDepth,uint8_t maxGeneration,
+                        const std::vector<SaveSummary>& previous);
+    ~IncrementalSaveScan();
+    bool step();
+    size_t examined() const;
+    size_t found() const;
+    std::vector<SaveSummary> take();
+private:
+    struct State;
+    std::unique_ptr<State> state_;
+};
 
 // "Diamond", "Black 2", ... ("Pokemon" if unknown).
 const char* versionName(uint8_t version);

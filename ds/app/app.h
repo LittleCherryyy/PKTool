@@ -107,6 +107,10 @@ public:
     uint32_t frameCount() const { return frame_; }
     bool animating() const { return fadeLeft_ > 0 || easing_; }
     bool animationsEnabled() const { return settings_.animations; }
+#ifdef VPT_TRANSPORTER_PREVIEW
+    bool transporterBusy() const {return bool(transportScan_)||transportLoadBox_>=0;}
+    const std::vector<std::string>& transporterRows() const {return transportRows_;}
+#endif
     void setAnimations(bool on) { settings_.animations = on; }
 
 private:
@@ -121,7 +125,7 @@ private:
     enum class Dialog : uint8_t { None, Message, Legality, ConfirmWrite, ConfirmClose, ConfirmDiscard, ConfirmRestore, ConfirmRelease };
     enum class Pending : uint8_t { None, Scan, Write, Restore, Legalize, Create, GbaBackup
 #ifdef VPT_TRANSPORTER_PREVIEW
-        , TransferPreview, TransferCommit
+        , TransferPreview, TransferCommit, TransferLoadSource, TransferLoadDestination
 #endif
     };
     // Lists shown by the picker screen when adding a Pokémon to an empty slot.
@@ -181,6 +185,15 @@ private:
     void updateTransporter(const Input& in);
     void drawTransporter(gfx::Canvas& top, gfx::Canvas& bottom);
     void transporterSelectSave(bool source);
+    void startTransportScan(bool source);
+    void tickTransportScan();
+    void showTransportSaveList(bool source,const std::string& message="",const std::string& focus="");
+    void tickTransportBoxes();
+    void cancelTransportBusy();
+    std::unique_ptr<saves::IncrementalSaveScan> transportScan_;
+    bool transportScanSource_=true,transportLoadSource_=true;
+    int transportLoadBox_=-1;
+    std::string transportLoadPath_;
     void transporterPreview();
     enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review };
     TransportPhase transportPhase_ = TransportPhase::Source;
