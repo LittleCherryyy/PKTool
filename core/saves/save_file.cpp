@@ -123,6 +123,32 @@ std::vector<BagSlot> SaveFile::readPocket(int pocket) const {
     return slots;
 }
 
+bool SaveFile::validGen2BagPocket(int pocket) const {
+    if(format()!=2) return false;
+    const auto* p=findPocket(bagLayout(),pocket);
+    if(!p) return false;
+    const size_t base=gbPocketOffset(pocket);
+    if(!base) return false;
+    if(p->kind==data::PocketKind::TMsHMs) {
+        std::vector<uint8_t> raw(p->itemCount,0xff);
+        if(base+raw.size()>data().size()) return false;
+        readBag(base,raw.data(),raw.size());
+        for(auto count:raw) if(count>p->maxCount) return false;
+        return true;
+    }
+    const bool single=p->kind==data::PocketKind::KeyItems;
+    const size_t stride=single?1:2;
+    std::vector<uint8_t> raw(2+p->capacity*stride,0xff);
+    if(base+raw.size()>data().size()) return false;
+    readBag(base,raw.data(),raw.size());
+    if(raw[0]>p->capacity||raw[1+raw[0]*stride]!=0xff) return false;
+    for(size_t i=0;i<raw[0];++i) {
+        const auto id=raw[1+i*stride];
+        const auto qty=single?1:raw[2+i*stride];
+        if(!pocketAllows(pocket,id)||qty<1||qty>itemMaxCount(pocket,id)) return false;
+    }
+    return true;
+}
 bool SaveFile::setPocket(int pocket, const std::vector<BagSlot>& slots, std::string* error) {
     const data::PocketSpec* p = findPocket(bagLayout(), pocket);
     if (!p) return fail(error, "No such pocket");

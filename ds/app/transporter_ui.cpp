@@ -178,6 +178,7 @@ void App::openTransporter() {
     transportSource_.clear();transportDest_.clear();
     transportRows_.clear();transportNotes_.clear();transportPositions_.clear();
     transportSelected_.clear();transportMons_.clear();transportResultMons_.clear();
+    transportEntries_.clear();transportReviewPairs_.clear();
     transportBoxSpecies_.clear();transportAnimating_=false;
     transportMessage_.clear();transportAccepted_=false;transportConfirm_=false;
     transportCatalog_=saves::findPokemonSaves(config_.scanRoot,3,&transportCatalog_);
@@ -251,20 +252,24 @@ void App::refreshTransportNames() {
 }
 void App::transporterPreview() {
     namespace br=pokemon::pccs_bridge;
-    if(transportCursor_<0 || transportSelected_.empty() ||
-       static_cast<size_t>(transportCursor_)+transportSelected_.size()>transportPositions_.size()) {
-        transportMessage_="Not enough empty slots from here";return;
+    if(transportPhase_!=TransportPhase::Review) {
+        if(transportCursor_<0 || transportSelected_.empty() ||
+           static_cast<size_t>(transportCursor_)+transportSelected_.size()>transportPositions_.size()) {
+            transportMessage_="Not enough empty slots from here";return;
+        }
+        transportReviewPairs_.clear();
+        for(size_t i=0;i<transportSelected_.size();++i) {
+            auto f=transportSelected_[i],t=transportPositions_[transportCursor_+i];
+            transportReviewPairs_.push_back({{f.first,f.second},{t.first,t.second}});
+        }
     }
-    std::vector<br::TransferPair> pairs;
-    for(size_t i=0;i<transportSelected_.size();++i) {
-        auto f=transportSelected_[i], t=transportPositions_[transportCursor_+i];
-        pairs.push_back({{f.first,f.second},{t.first,t.second}});
-    }
+    const auto& pairs=transportReviewPairs_;
+    transportConfirm_=false;
     transportSave_.reset();sprites_.clear();
     transportNotes_.clear();transportAccepted_=false;
     transportReview_=br::ReviewedTransfer::createBatch(
         transportSource_,transportDest_,transportSourceBytes_,transportDestBytes_,
-        pairs,transportMessage_,transportNotes_,transportLanguage_);
+        pairs,transportMessage_,transportNotes_,transportLanguage_,&transportEntries_);
     transportAccepted_=bool(transportReview_);
     transportResultMons_.clear();
     if(transportReview_) {
@@ -280,13 +285,18 @@ void App::transporterPreview() {
         }
         transportNotes_.insert(transportNotes_.begin(),summary.begin(),summary.end());
     }
-    std::vector<uint8_t>().swap(transportSourceBytes_);
-    std::vector<uint8_t>().swap(transportDestBytes_);
+    if(transportAccepted_) {
+        std::vector<uint8_t>().swap(transportSourceBytes_);
+        std::vector<uint8_t>().swap(transportDestBytes_);
+    }
     if(!transportAccepted_) {
         // Keep complete diagnostic sentences as selectable scrolling rows.
         transportNotes_.insert(transportNotes_.begin(),transportMessage_);
     }
-    transportRows_=transportNotes_;
+    transportRows_.clear();
+    for(const auto& e:transportEntries_)
+        transportRows_.push_back(e.mon.nickname);
+    if(transportRows_.empty()) transportRows_=transportNotes_;
     transportPhase_=TransportPhase::Review;
     transportCursor_=transportScroll_=0;
 }
@@ -310,6 +320,19 @@ void App::updateTransporter(const Input& in) {
         return;
     }
 #endif
+    if(transportPhase_==TransportPhase::Review && !transportAccepted_ &&
+       !transportSourceBytes_.empty() && transportEntries_.size()==transportReviewPairs_.size() &&
+       (in.pressed&kKeyX)) {
+        std::vector<pokemon::pccs_bridge::TransferPair> ready;
+        for(size_t i=0;i<transportEntries_.size();++i)
+            if(transportEntries_[i].ready) ready.push_back(transportReviewPairs_[i]);
+        if(!ready.empty()&&ready.size()<transportReviewPairs_.size()) {
+            // Explicitly re-review the subset, retaining original source/destination slots.
+            transportReviewPairs_=std::move(ready);
+            pending_=Pending::TransferPreview;
+        }
+        return;
+    }
     if(transportPhase_==TransportPhase::SourceMon && transportLanguage_!=1 &&
        (in.pressed&(kKeyLeft|kKeyRight))) {
         const uint8_t langs[]={2,3,5,4,7};
@@ -383,6 +406,8 @@ void App::updateTransporter(const Input& in) {
                     transportMessage_="Save changed; review invalidated";
                     transportAccepted_=false;transportReview_.reset();
                 }
+            } else if(!transportSourceBytes_.empty()&&!transportDestBytes_.empty()) {
+                pending_=Pending::TransferPreview;
             }
             break; // No journal persistence in the preview build.
     }
@@ -484,6 +509,41 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
             }
         }
         drawHints(bottom,{{"A","Select"},{"L/R","Page"},{"B","Cancel"}},{kKeyA,0,kKeyB});
+        return;
+    }
+    if(transportPhase_==TransportPhase::Review&&!transportEntries_.empty()) {
+        const auto& e=transportEntries_[transportCursor_];
+        const int ready=static_cast<int>(std::count_if(transportEntries_.begin(),transportEntries_.end(),[](const auto& r){return r.ready;}));
+        const int blocked=static_cast<int>(transportEntries_.size())-ready;
+        drawChrome(top,"Transfer review",transportAccepted_?"READY":"CHECK",transportAccepted_?kGreen:kYellow);
+        top.roundRect(5,35,246,137,kBorder,kPanel);
+        drawTransportSprite(top,e.mon,10,46,76,77,transportGeneration_);
+        marqueeActive_ |= drawMarquee(top,91,45,152,Align::Left,e.mon.nickname,kText,frame_-marqueeStart_);
+        top.text(kFontSmall,91,65,152,Align::Left,e.ready?(e.returnedItem?"ITEM TO BAG":"READY"):"BLOCKED",e.ready?(e.returnedItem?kYellow:kGreen):kRed);
+        marqueeActive_ |= drawMarquee(top,91,84,152,Align::Left,e.ready?(e.returnedItem?e.itemName+" x1":"Can transfer"):e.error,kText,frame_-marqueeStart_);
+        if(!e.notes.empty()) marqueeActive_ |= drawMarquee(top,9,126,238,Align::Left,e.notes.front(),kMuted,frame_-marqueeStart_);
+        marqueeActive_ |= drawMarquee(top,9,147,238,Align::Center,transportMessage_,transportAccepted_?kGreen:kYellow,frame_-marqueeStart_);
+        bottom.clear(kBackground);
+        bottom.text(kFontSmall,4,3,248,Align::Center,std::to_string(ready)+" ready / "+std::to_string(blocked)+" blocked",kText);
+        if(transportCursor_<transportScroll_) transportScroll_=transportCursor_;
+        if(transportCursor_>=transportScroll_+5) transportScroll_=transportCursor_-4;
+        for(int row=0;row<5&&transportScroll_+row<static_cast<int>(transportEntries_.size());++row) {
+            const int index=transportScroll_+row,y=20+30*row;
+            const auto& r=transportEntries_[index];
+            const Color color=r.ready?(r.returnedItem?kYellow:kGreen):kRed;
+            bottom.roundRect(4,y,248,28,index==transportCursor_?kAccent:kBorder,kPanel,index==transportCursor_?2:1);
+            if(r.mon.species) drawIcon(bottom,7,y,35,28,r.mon,false);
+            bottom.text(kFontSmall,45,y+3,135,Align::Left,r.mon.nickname,kText);
+            bottom.text(kFontSmall,180,y+3,66,Align::Right,r.ready?(r.returnedItem?"BAG":"OK"):"BLOCK",color);
+            marqueeActive_ |= index==transportCursor_?drawMarquee(bottom,45,y+15,199,Align::Left,r.ready?(r.returnedItem?r.itemName+" -> Bag":"Ready to move"):r.error,color,frame_-marqueeStart_):false;
+            zones_.push_back({4,y,248,28,kZoneItem+index});
+        }
+#ifdef VPT_TRANSPORTER_WRITE
+        if(transportAccepted_) drawHints(bottom,{{"START","Move"},{"B","Cancel"}},{kKeyStart,kKeyB});
+        else
+#endif
+        if(ready>0&&blocked>0) drawHints(bottom,{{"X","Ready only"},{"A","Retry"},{"B","Home"}},{kKeyX,kKeyA,kKeyB});
+        else drawHints(bottom,{{"A","Retry"},{"B","Home"}},{kKeyA,kKeyB});
         return;
     }
     drawChrome(top,"Poke Transporter", "PCCS LEGAL",kAccent);

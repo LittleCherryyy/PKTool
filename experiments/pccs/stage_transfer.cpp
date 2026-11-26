@@ -29,6 +29,48 @@ bool sameParty(const SaveFile& a,const SaveFile& b) {
     }
     return true;
 }
+using Pocket=std::vector<saves::BagSlot>;
+bool samePocket(const Pocket& a,const Pocket& b) {
+    if(a.size()!=b.size()) return false;
+    for(size_t i=0;i<a.size();++i) if(a[i].item!=b[i].item||a[i].count!=b[i].count) return false;
+    return true;
+}
+bool planItemReturn(const SaveFile& save,uint16_t item,std::vector<Pocket>& pockets,
+                    int& pocket,Pocket& updated,std::string& error) {
+    std::string name=save.itemName(item);
+    // Mail has separate payload semantics. Never silently discard its message.
+    if(name.find("Mail")!=std::string::npos||name.find("mail")!=std::string::npos) {
+        error="Remove Mail in the original game";return false;
+    }
+    // Gen II pocket 4 is PC storage, not the player's Bag.
+    for(int i=0;i<std::min(4,save.pocketCount());++i) {
+        if(!save.pocketAllows(i,item)) continue;
+        if(save.pocketInfo(i).kind==data::PocketKind::KeyItems) {
+            error="Unsupported held key item";return false;
+        }
+        if(!save.validGen2BagPocket(i)) {error="Invalid source bag pocket";return false;}
+        pocket=i;updated=pockets[i];
+        const auto max=save.itemMaxCount(i,item);
+        auto it=std::find_if(updated.begin(),updated.end(),[&](const saves::BagSlot& a){return a.item==item;});
+        if(it!=updated.end()) {
+            // Respect the normal Gen II stack limit; never overwrite or discard.
+            if(it->count>=max) {error="Bag item stack full";return false;}
+            ++it->count;
+        } else {
+            if(updated.size()>=static_cast<size_t>(save.pocketInfo(i).capacity)) {error="Source bag pocket full";return false;}
+            updated.push_back({item,1});
+            // TM/HM pocket is serialized in item-table order, not insertion order.
+            if(save.pocketInfo(i).kind==data::PocketKind::TMsHMs) {
+                const auto order=save.pocketItems(i);
+                std::sort(updated.begin(),updated.end(),[&](const saves::BagSlot& a,const saves::BagSlot& b){
+                    return std::find(order.begin(),order.end(),a.item)<std::find(order.begin(),order.end(),b.item);
+                });
+            }
+        }
+        return true;
+    }
+    error="Held item cannot be returned to Bag";return false;
+}
 bool sourceMatches(const SaveFile& before,const SaveFile& after,const std::vector<TransferPair>& pairs) {
     if(!sameParty(before,after)) return false;
     for(int b=0;b<before.boxCount();++b) {
@@ -88,25 +130,57 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
         return fail("Selected language does not match GB save layout");
     std::vector<std::array<uint8_t,80>> converted;
     converted.reserve(pairs.size());
-    // Convert immutable original slots first. No staged save allocations during PCCS.
+    std::vector<Pocket> plannedBag;
+    std::vector<bool> changedBag;
+    if(s->format()==2) {
+        for(int p=0;p<s->pocketCount();++p) plannedBag.push_back(s->readPocket(p));
+        changedBag.resize(plannedBag.size(),false);
+    }
+    bool allReady=true;
+    // Review every selected entity even if another is blocked. Bag capacity is
+    // reserved only for an entity whose conversion succeeded.
     for(size_t i=0;i<pairs.size();++i) {
         const auto p=pairs[i];
         const auto prefix=pairs.size()==1?std::string():"Pokemon "+std::to_string(i+1)+": ";
-        if(!inBounds(*s,p.from)||!inBounds(*d,p.to)) return fail(prefix+"Invalid box slot");
+        EntryReview entry;
         Blob selected{},existing{};
-        if(s->readBoxSlot(p.from.box,p.from.slot,selected.data())!=SlotState::Valid) return fail(prefix+"Source slot is not valid");
-        if(d->readBoxSlot(p.to.box,p.to.slot,existing.data())!=SlotState::Empty) return fail(prefix+"Destination slot is not empty");
-        // International GB saves contain no language byte per Pokemon.
-        // The explicit source language applies only to this temporary entity.
-        selected[s->format()==1?pk1::kLanguageOffset:pk2::kLanguageOffset]=sourceLanguage;
-        auto preview=previewGbToGba(selected.data(),s->storedSize(),s->format());
-        if(!preview.ok) {
-            for(auto& note:preview.notes) result.notes.push_back(prefix+note);
-            return fail(prefix+preview.error);
+        int pocket=-1;Pocket updated;
+        if(!inBounds(*s,p.from)||s->readBoxSlot(p.from.box,p.from.slot,selected.data())!=SlotState::Valid)
+            entry.error="Source slot is not valid";
+        else {
+            selected[s->format()==1?pk1::kLanguageOffset:pk2::kLanguageOffset]=sourceLanguage;
+            entry.mon=entity::decode(s->format(),selected.data(),s->storedSize());
+            if(!inBounds(*d,p.to)||d->readBoxSlot(p.to.box,p.to.slot,existing.data())!=SlotState::Empty)
+                entry.error="Destination slot is not empty";
+            else if(s->format()==2 && selected[pk2::offset::kHeldItem]) {
+                const auto item=selected[pk2::offset::kHeldItem];
+                entry.itemName=s->itemName(item);
+                if(planItemReturn(*s,item,plannedBag,pocket,updated,entry.error))
+                    selected[pk2::offset::kHeldItem]=0;
+            }
+            if(entry.error.empty()) {
+                auto preview=previewGbToGba(selected.data(),s->storedSize(),s->format());
+                entry.notes=std::move(preview.notes);
+                if(!preview.ok) entry.error=preview.error;
+                else {
+                    entry.ready=true;
+                    if(pocket>=0) {
+                        plannedBag[pocket]=std::move(updated);changedBag[pocket]=true;
+                        entry.returnedItem=entry.mon.heldItem;
+                        entry.notes.insert(entry.notes.begin(),"Return to source Bag: "+entry.itemName+" x1");
+                    }
+                    converted.push_back(preview.data);
+                }
+            }
         }
-        for(auto& note:preview.notes) result.notes.push_back(prefix+note);
-        converted.push_back(preview.data);
+        if(!entry.ready) {
+            allReady=false;
+            if(result.error.empty()) result.error=prefix+entry.error;
+        }
+        for(const auto& note:entry.notes) result.notes.push_back(prefix+note);
+        result.entries.push_back(std::move(entry));
     }
+    if(!allReady) return result;
     // Stage and reload each save only once. Release mutable destination before
     // source staging to reduce the physical DSi heap peak.
     std::vector<uint8_t> destinationAfter;
@@ -122,6 +196,8 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
         auto dr=saves::loadSaveFile(std::move(image));
         if(!dr||!saves::validateSave(*dr)||!destinationMatches(*d,*dr,pairs,converted))
             return fail("Destination round-trip verification failed");
+        for(int p=0;p<d->pocketCount();++p)
+            if(!samePocket(d->readPocket(p),dr->readPocket(p))) return fail("Destination Bag changed");
         destinationAfter=dr->data();
     }
     d.reset();
@@ -133,11 +209,18 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
         return a.box!=b.box?a.box>b.box:a.slot>b.slot;
     });
     for(auto from:order) if(!sd->clearBoxSlot(from.box,from.slot)) return fail("Cannot stage source removal");
+    for(size_t p=0;p<changedBag.size();++p)
+        if(changedBag[p]&&!sd->setPocket(static_cast<int>(p),plannedBag[p]))
+            return fail("Cannot stage source Bag");
     sd->refreshChecksums();
     auto image=sd->data(); sd.reset();
     auto sr=saves::loadSaveFile(std::move(image));
     if(!sr||!saves::validateSave(*sr)||!sourceMatches(*s,*sr,pairs))
         return fail("Source round-trip verification failed");
+    for(size_t p=0;p<plannedBag.size();++p)
+        if(!samePocket(plannedBag[p],sr->readPocket(static_cast<int>(p))) ||
+           (changedBag[p]&&!sr->validGen2BagPocket(static_cast<int>(p))))
+            return fail("Source Bag round-trip verification failed");
     result.sourceAfter=sr->data();
     result.destinationAfter=std::move(destinationAfter);
     result.converted=converted.front();result.convertedBatch=std::move(converted);

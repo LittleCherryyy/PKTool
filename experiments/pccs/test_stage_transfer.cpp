@@ -94,6 +94,42 @@ int main() {
             REQUIRE(out->readBoxSlot(0,0,read.data())==sv::SlotState::Valid && pk::pk3::toPokemon(read.data(),80).species==species);
         }
     }
+    // Held items are returned to the source Bag atomically; every entry
+    // is reviewed even when the middle entry is blocked.
+    for(auto setup:{fakegb::kGen2Gs,fakegb::kGen2Crystal,fakegb::kGen2CrystalJpn}) {
+        auto bagSave=sv::loadSaveFile(fakegb::blankGen2(setup));REQUIRE(bagSave);
+        int pocket=-1;const uint16_t item=0x12; // Potion
+        for(int p=0;p<4;++p) if(bagSave->pocketAllows(p,item)) {pocket=p;break;}
+        REQUIRE(pocket>=0&&bagSave->setPocket(pocket,{{item,5}}));
+        trainer.version=setup.japanese?41:39;trainer.language=setup.japanese?1:2;
+        trainer.name=setup.japanese?"アッシュ":"ASH";
+        auto mon=pk::create4::newPokemon(trainer,155,5,255);
+        if(setup.japanese) mon.nickname="ヒノアラシ";
+        std::array<uint8_t,pk::entity::kMaxPartySize> held{};
+        pk::create4::encode(mon,held.data());held[1]=item;
+        REQUIRE(bagSave->writeBoxSlot(0,0,held.data()));
+        REQUIRE(bagSave->writeBoxSlot(0,1,held.data()));
+        held[1]=0;REQUIRE(bagSave->writeBoxSlot(0,2,held.data()));
+        bagSave->refreshChecksums();
+        auto original=bagSave->data();
+        auto batch=br::stageGbBatch(original,originalD,{{{0,0},{0,0}},{{0,1},{0,1}},{{0,2},{0,2}}});
+        if(!batch.ok) std::fprintf(stderr,"Bag regression: %s\n",batch.error.c_str());
+        REQUIRE(batch.ok&&batch.entries.size()==3&&batch.entries[0].ready&&batch.entries[0].returnedItem==item);
+        auto after=sv::loadSaveFile(batch.sourceAfter);REQUIRE(after&&sv::validateSave(*after));
+        REQUIRE(after->readPocket(pocket).size()==1&&after->readPocket(pocket)[0].count==7);
+        REQUIRE(bagSave->data()==original);
+        REQUIRE(pk::pk3::toPokemon(batch.converted.data(),80).heldItem==0);
+        REQUIRE(bagSave->setPocket(pocket,{{item,static_cast<uint16_t>(bagSave->itemMaxCount(pocket,item)-1)}}));
+        bagSave->refreshChecksums();original=bagSave->data();
+        auto refused=br::stageGbBatch(original,originalD,{{{0,0},{0,0}},{{0,1},{0,1}},{{0,2},{0,2}}});
+        REQUIRE(!refused.ok&&refused.entries.size()==3&&refused.entries[0].ready&&!refused.entries[1].ready&&refused.entries[2].ready);
+        REQUIRE(refused.sourceAfter.empty()&&refused.destinationAfter.empty()&&bagSave->data()==original);
+        auto subset=br::stageGbBatch(original,originalD,{{{0,0},{0,0}},{{0,2},{0,2}}});
+        REQUIRE(subset.ok);
+        auto left=sv::loadSaveFile(subset.sourceAfter);
+        REQUIRE(left&&left->readBoxSlot(0,0,read.data())==sv::SlotState::Valid&&read[1]==item);
+        REQUIRE(left->readPocket(pocket)[0].count==bagSave->itemMaxCount(pocket,item));
+    }
     // Same western save geometry, language explicitly supplied by user.
     for(uint8_t lang:{2,3,4,5,7}) {
         auto multilingual=br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},lang);

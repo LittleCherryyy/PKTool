@@ -194,6 +194,8 @@ private:
     int transportCursor_ = 0, transportScroll_ = 0;
     std::vector<std::pair<int,int>> transportSelected_;
     bool transportAccepted_ = false;
+    std::vector<pokemon::pccs_bridge::EntryReview> transportEntries_;
+    std::vector<pokemon::pccs_bridge::TransferPair> transportReviewPairs_;
     uint8_t transportLanguage_=2, transportGeneration_=2;
     bool transportAnimating_=false;
     uint32_t transportAnimationStart_=0;

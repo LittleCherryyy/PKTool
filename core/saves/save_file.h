@@ -116,6 +116,8 @@ public:
     int itemMaxCount(int pocket, uint16_t item) const;
     // Occupied slots in order (empty slots are skipped).
     std::vector<BagSlot> readPocket(int pocket) const;
+    // Strict raw Gen II pocket validation before transactional item returns.
+    bool validGen2BagPocket(int pocket) const;
     // Replaces the content of a pocket. Only the game's limits are enforced:
     // at most capacity slots, each item a real item of the game (it need not
     // belong in this pocket and may repeat), quantity in 1..itemMaxCount.

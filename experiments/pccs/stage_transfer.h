@@ -1,15 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include "pccs_bridge.h"
+#include "core/pokemon/pokemon.h"
 #include <vector>
 namespace pktool::pokemon::pccs_bridge {
 struct BoxSlot { int box; int slot; };
 constexpr size_t kMaxBatch = 10;
 struct TransferPair { BoxSlot from; BoxSlot to; };
+struct EntryReview {
+    Pokemon mon;
+    bool ready=false;
+    uint16_t returnedItem=0;
+    std::string itemName, error;
+    std::vector<std::string> notes;
+};
 struct StagedTransfer {
     bool ok = false;
     std::string error;
     std::vector<std::string> notes;
+    std::vector<EntryReview> entries;
     std::vector<uint8_t> sourceAfter;
     std::vector<uint8_t> destinationAfter;
     std::array<uint8_t,80> converted{};

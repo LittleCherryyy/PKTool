@@ -270,8 +270,8 @@ std::unique_ptr<ReviewedTransfer> ReviewedTransfer::create(
 std::unique_ptr<ReviewedTransfer> ReviewedTransfer::createBatch(
     const std::string& source,const std::string& destination,
     const Bytes& expectedSource,const Bytes& expectedDestination,
-    const std::vector<TransferPair>& pairs,std::string& error,std::vector<std::string>& notes,uint8_t sourceLanguage) {
-    error.clear(); notes.clear();
+    const std::vector<TransferPair>& pairs,std::string& error,std::vector<std::string>& notes,uint8_t sourceLanguage,std::vector<EntryReview>* entries) {
+    error.clear(); notes.clear();if(entries) entries->clear();
     auto s=normalized(source),d=normalized(destination);
     if(s.empty()) {error="Unsupported source save path";return nullptr;}
     if(d.empty()) {error="Unsupported destination save path";return nullptr;}
@@ -288,6 +288,7 @@ std::unique_ptr<ReviewedTransfer> ReviewedTransfer::createBatch(
     }
     auto staged=stageGbBatch(expectedSource,expectedDestination,pairs,sourceLanguage);
     notes=staged.notes;
+    if(entries) *entries=std::move(staged.entries);
     if(!staged.ok) { error=staged.error;return nullptr; }
     if(!exact(s,expectedSource)||!exact(d,expectedDestination)) {
         error="Save changed during conversion";return nullptr;
