@@ -42,8 +42,33 @@ bool App::refreshTransferGate() {
     return false;
 }
 void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
-    drawChrome(top,"Poke Transporter","RECOVERY",kYellow);
+    using pokemon::pccs_bridge::StartupState;
+    const bool complete=transferStartup_.state==StartupState::Completed;
+    drawChrome(top,"Poke Transporter",complete?"SUCCESS":"RECOVERY",complete?kGreen:kYellow);
     top.roundRect(5,kBodyTop+3,246,136,kBorder,kPanel);
+    if(complete) {
+        top.fillCircle(128,47,12,kGreen);
+        for(int i=0;i<4;++i) top.pixel(121+i,46+i,kPanelDark);
+        for(int i=0;i<8;++i) top.pixel(125+i,50-i,kPanelDark);
+        top.text(kFontLarge,8,63,240,Align::Center,"Transfer successful!",kGreen);
+        top.text(kFontSmall,8,83,240,Align::Center,"Both saves verified",kText);
+        marqueeActive_ |= drawMarquee(top,8,99,240,Align::Left,"From: "+io::fileName(transferStartup_.source),kMuted,frame_-marqueeStart_);
+        marqueeActive_ |= drawMarquee(top,8,113,240,Align::Left,"To: "+io::fileName(transferStartup_.destination),kMuted,frame_-marqueeStart_);
+        marqueeActive_ |= drawMarquee(top,8,139,240,Align::Center,transferStartup_.message,kText,frame_-marqueeStart_);
+        bottom.clear(kBackground);
+        bottom.text(kFontLarge,0,44,256,Align::Center,"Pokemon moved!",kGreen);
+        bottom.text(kFontSmall,0,69,256,Align::Center,"Original backups retained.",kText);
+#ifdef VPT_TRANSPORTER_WRITE
+        bottom.roundRect(18,91,220,44,kAccent,kPanel,2);
+        bottom.text(kFontLarge,18,99,220,Align::Center,"Return to main menu",kText);
+        bottom.text(kFontSmall,18,116,220,Align::Center,"A / B / X / START",kMuted);
+        zones_.push_back({18,91,220,44,kKeyA});
+        bottom.text(kFontSmall,0,151,256,Align::Center,"Finishes and archives the transfer.",kMuted);
+#else
+        bottom.text(kFontSmall,0,112,256,Align::Center,"Write-enabled build needed to finish.",kYellow);
+#endif
+        return;
+    }
     top.text(kFontLarge,8,45,240,Align::Center,"Transfer locked",kYellow);
     marqueeActive_ |= drawMarquee(top,8,68,240,Align::Center,transferStartup_.message,kText,frame_-marqueeStart_);
     marqueeActive_ |= drawMarquee(top,8,87,240,Align::Left,"From: "+transferStartup_.source,kMuted,frame_-marqueeStart_);
@@ -53,10 +78,9 @@ void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
     bottom.clear(kBackground);
     bottom.text(kFontLarge,0,44,256,Align::Center,"Editor blocked",kText);
 #ifdef VPT_TRANSPORTER_WRITE
-    using pokemon::pccs_bridge::StartupState;
     bottom.text(kFontSmall,0,70,256,Align::Center,
         transferStartup_.state==StartupState::Pending?"X: Resume recorded transfer":
-        transferStartup_.state==StartupState::Completed?"X: Archive completed transfer":"Conflicting files: no writes",kYellow);
+        "Conflicting files: no writes",kYellow);
 #else
     bottom.text(kFontSmall,0,70,256,Align::Center,"Read-only recovery inspection",kMuted);
 #endif
@@ -80,8 +104,12 @@ void App::runTransferRecovery() {
     else if(transferStartup_.state==br::StartupState::Completed)
         r=br::archiveActiveJournal(j);
     scanned_=false;saveFiles_.clear();transportCatalog_.clear();
-    if(refreshTransferGate()) showMessage("Transporter",r.message);
-    else transferStartup_.message=r.message;
+    if(refreshTransferGate()) {
+        if(r.status==br::JournalStatus::Complete) {
+            homeCursor_=4;
+            transportRows_.clear();transportNotes_.clear();transportSelected_.clear();
+        } else showMessage("Transporter",r.message);
+    } else transferStartup_.message=r.message;
 #endif
 }
 void App::commitTransporter() {

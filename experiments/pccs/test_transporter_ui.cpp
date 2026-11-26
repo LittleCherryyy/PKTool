@@ -73,9 +73,9 @@ int main() {
     {
         ui::App app(cfg);
         REQUIRE(std::string(app.screenName())=="TransferRecovery");
-        press(app,ui::kKeyB);REQUIRE(std::string(app.screenName())=="TransferRecovery");
         REQUIRE(!app.openSave(b));
-        press(app,ui::kKeyX);
+        REQUIRE(press(app,ui::kKeyStart)); // completed: never exit the homebrew
+        REQUIRE(std::string(app.screenName())=="Home");
         REQUIRE(std::string(app.screenName())=="Home");
         REQUIRE(br::inspectActiveJournal(j).state==br::StartupState::Clear);
     }
@@ -130,7 +130,7 @@ int main() {
         {
             ui::App app(bc);
             REQUIRE(std::string(app.screenName())=="TransferRecovery");
-            press(app,ui::kKeyX);
+            REQUIRE(press(app,ui::kKeyA)); // finish & return
             REQUIRE(std::string(app.screenName())=="Home");
             REQUIRE(br::inspectActiveJournal(bj).state==br::StartupState::Clear);
         }
@@ -150,6 +150,7 @@ int main() {
     REQUIRE(put(j+".new",{1,2,3}));
     ui::App locked(cfg);REQUIRE(std::string(locked.screenName())=="TransferRecovery");
     press(locked,ui::kKeyX);REQUIRE(std::string(locked.screenName())=="TransferRecovery");
+    press(locked,ui::kKeyB);REQUIRE(std::string(locked.screenName())=="TransferRecovery");
     REQUIRE(same(a,sa)&&same(b,da));
     std::puts("PASS: end-to-end UI selection, cancel, two-step commit, restart lock, archive, destination and source validation");
     return 0;

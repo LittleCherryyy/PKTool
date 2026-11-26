@@ -741,6 +741,15 @@ bool App::updateFrame(const Input& rawInput) {
 #ifdef VPT_TRANSPORTER_PREVIEW
     // Recovery is modal, before pending writes, touch routing or any editor action.
     if(screen_==Screen::TransferRecovery) {
+#ifdef VPT_TRANSPORTER_WRITE
+        if(transferStartup_.state==pokemon::pccs_bridge::StartupState::Completed) {
+            if((rawInput.pressed&(kKeyA|kKeyB|kKeyX|kKeyStart)) ||
+               (rawInput.touched && touchedZone(rawInput)==kKeyA)) {
+                runTransferRecovery();redraw_=true;
+            }
+            return true;
+        }
+#endif
         if(rawInput.pressed&kKeyStart) return false;
         if(rawInput.pressed&kKeyA) {refreshTransferGate();redraw_=true;}
 #ifdef VPT_TRANSPORTER_WRITE
