@@ -107,6 +107,25 @@ int main(){
         REQUIRE(br::archiveActiveJournal(j).status==br::JournalStatus::Complete);
         REQUIRE(bank.load(bankPath)==pktool::bank::Bank::LoadResult::Ok&&bank.format(0,0)==3);
     }
+    {
+        // Withdrawal of the last native Bank Pokemon changes only its slot,
+        // the canonical version and CRC; recover after writing GBA first.
+        auto bp=std::string(root)+"/native-bank.pkb";
+        pktool::bank::Bank bank;
+        REQUIRE(bank.set(0,0,2,e.data()));
+        // e currently holds the earlier converted PK3. Rebuild a true PK2.
+        pk::create4::Trainer t;t.name="ASH";t.tid=12345;t.version=41;t.language=2;
+        pk::create4::encode(pk::create4::newPokemon(t,155,5,255),e.data());e[1]=0;
+        REQUIRE(bank.set(0,0,2,e.data()));
+        const auto before=bank.serialize();
+        REQUIRE(put(bp,before)&&put(b,db));
+        auto reviewed=br::ReviewedTransfer::create(bp,b,before,db,{0,0},{0,0},err,notes);
+        REQUIRE(reviewed&&reviewed->persist(j).status==br::JournalStatus::Complete);
+        REQUIRE(br::resumeJournal(j,bp,b,br::StopPoint::DestinationWritten).status==br::JournalStatus::Interrupted);
+        REQUIRE(br::recoverActiveJournal(j).status==br::JournalStatus::Complete);
+        REQUIRE(br::archiveActiveJournal(j).status==br::JournalStatus::Complete);
+        REQUIRE(bank.load(bp)==pktool::bank::Bank::LoadResult::Ok&&bank.count()==0);
+    }
     std::puts("PASS: archive cleanup interruption and resume");
     std::puts("PASS: startup gate clear, partial, corrupt, pending, conflict, recovered and complete; exact reviewed bytes persisted");
     return 0;

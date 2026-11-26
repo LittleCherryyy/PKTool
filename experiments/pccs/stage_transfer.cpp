@@ -118,7 +118,7 @@ struct BatchStage::State {
     const std::vector<TransferPair> pairs;
     uint8_t sourceLanguage;
     std::unique_ptr<SaveFile> s,d;
-    std::unique_ptr<bank::Bank> bankDest;
+    std::unique_ptr<bank::Bank> bankDest,bankSource;
     StagedTransfer result;
     std::vector<std::array<uint8_t,80>> converted;
     std::vector<Pocket> plannedBag;
@@ -135,21 +135,27 @@ struct BatchStage::State {
     for(size_t i=0;i<pairs.size();++i) for(size_t j=0;j<i;++j)
         if(sameSlot(pairs[i].from,pairs[j].from)||sameSlot(pairs[i].to,pairs[j].to))
             return fail("Duplicate source or destination slot");
-    s=saves::loadSaveFile(source);
+    if(source.size()>=4&&std::equal(source.begin(),source.begin()+4,"PKBK")) {
+        bankSource=std::make_unique<bank::Bank>();
+        if(!loadTransferBank(source,*bankSource)) return fail("Bank needs validation or upgrade in editor");
+    } else s=saves::loadSaveFile(source);
     if(destination.size()>=4&&std::equal(destination.begin(),destination.begin()+4,"PKBK")) {
         bankDest=std::make_unique<bank::Bank>();
         if(!loadTransferBank(destination,*bankDest)) return fail("Bank needs validation or upgrade in editor");
     } else d=saves::loadSaveFile(destination);
-    if(!s||!saves::validateSave(*s)||(!bankDest&&(!d||!saves::validateSave(*d)))) return fail("Invalid save or checksum");
-    if((s->format()!=1&&s->format()!=2)||!supportedLanguage(s->language())||
+    if(bankSource&&bankDest) return fail("Bank-to-Bank transfer is not supported");
+    if((!bankSource&&(!s||!saves::validateSave(*s)))||(!bankDest&&(!d||!saves::validateSave(*d)))) return fail("Invalid save or checksum");
+    if((!bankSource&&((s->format()!=1&&s->format()!=2)||!supportedLanguage(s->language())))||
        (!bankDest&&(d->format()!=3||!supportedLanguage(d->language()))))
         return fail("Unsupported save format or language");
-    if(!sourceLanguage) sourceLanguage=s->language();
-    if(!supportedLanguage(sourceLanguage)||(sourceLanguage==1)!=(s->language()==1))
-        return fail("Selected language does not match GB save layout");
+    if(!bankSource) {
+        if(!sourceLanguage) sourceLanguage=s->language();
+        if(!supportedLanguage(sourceLanguage)||(sourceLanguage==1)!=(s->language()==1))
+            return fail("Selected language does not match GB save layout");
+    }
 
             converted.reserve(pairs.size());
-            if(s->format()==2) {
+            if(s&&s->format()==2) {
                 for(int p=0;p<s->pocketCount();++p) plannedBag.push_back(s->readPocket(p));
                 changedBag.resize(plannedBag.size(),false);
             }
@@ -162,24 +168,32 @@ struct BatchStage::State {
         EntryReview entry;
         Blob selected{},existing{};
         int pocket=-1;Pocket updated;uint16_t heldItem=0;
-        if(!inBounds(*s,p.from)||s->readBoxSlot(p.from.box,p.from.slot,selected.data())!=SlotState::Valid)
-            entry.error="Source slot is not valid";
+        const uint8_t format=bankSource?bankSource->format(p.from.box,p.from.slot):s->format();
+        const auto raw=bankSource?bankSource->entity(p.from.box,p.from.slot):nullptr;
+        const bool classic=format==1||format==2;
+        const size_t stored=classic?entity::storedSize(format):0;
+        const bool valid=bankSource?(classic&&raw):
+            (inBounds(*s,p.from)&&s->readBoxSlot(p.from.box,p.from.slot,selected.data())==SlotState::Valid);
+        if(!valid) entry.error="Source slot is not a valid classic Pokemon";
         else {
-            selected[s->format()==1?pk1::kLanguageOffset:pk2::kLanguageOffset]=sourceLanguage;
-            entry.mon=entity::decode(s->format(),selected.data(),s->storedSize());
+            if(bankSource) std::copy_n(raw,stored,selected.data());
+            else selected[format==1?pk1::kLanguageOffset:pk2::kLanguageOffset]=sourceLanguage;
+            entry.mon=entity::decode(format,selected.data(),stored);
             const bool empty=bankDest?
                 (p.to.box>=0&&p.to.box<bank::Bank::kBoxCount&&p.to.slot>=0&&p.to.slot<bank::Bank::kSlotsPerBox&&!bankDest->format(p.to.box,p.to.slot)):
                 (inBounds(*d,p.to)&&d->readBoxSlot(p.to.box,p.to.slot,existing.data())==SlotState::Empty);
             if(!empty)
                 entry.error="Destination slot is not empty";
-            else if(s->format()==2 && selected[pk2::offset::kHeldItem]) {
+            else if(bankSource&&format==2&&selected[pk2::offset::kHeldItem])
+                entry.error="Withdraw to Gen II and remove item first";
+            else if(format==2 && selected[pk2::offset::kHeldItem]) {
                 const auto item=selected[pk2::offset::kHeldItem];heldItem=item;
                 entry.itemName=s->itemName(item);
                 if(planItemReturn(*s,item,plannedBag,pocket,updated,entry.error))
                     selected[pk2::offset::kHeldItem]=0;
             }
             if(entry.error.empty()) {
-                auto preview=previewGbToGba(selected.data(),s->storedSize(),s->format());
+                auto preview=previewGbToGba(selected.data(),stored,format);
                 entry.notes=std::move(preview.notes);
                 if(!preview.ok) entry.error=preview.error;
                 else {
@@ -247,6 +261,26 @@ struct BatchStage::State {
         destinationAfter=dr->data();
     }
     d.reset();
+    if(bankSource) {
+        for(const auto& p:pairs)
+            if(!bankSource->clear(p.from.box,p.from.slot)) return fail("Cannot stage Bank removal");
+        auto after=bankSource->serialize();
+        bankSource.reset();
+        bank::Bank check;
+        if(after.size()!=source.size()||!loadTransferBank(after,check)) return fail("Bank source round-trip failed");
+        constexpr size_t base=8+bank::Bank::kBoxCount*bank::Bank::kBoxNameBytes;
+        constexpr size_t stride=4+bank::Bank::kEntitySize;
+        auto expected=source;
+        for(const auto& p:pairs) {
+            const size_t off=base+stride*(p.from.box*bank::Bank::kSlotsPerBox+p.from.slot);
+            std::fill_n(expected.begin()+off,stride,0);
+        }
+        // Last classic entity removal may downgrade v3 to v2.
+        expected[4]=after[4];expected[5]=after[5];
+        expected[expected.size()-2]=after[after.size()-2];expected.back()=after.back();
+        if(expected!=after) return fail("Unrelated Bank bytes changed");
+        result.sourceAfter=std::move(after);
+    } else {
     auto sd=saves::loadSaveFile(source);
     if(!sd) return fail("Cannot stage source");
     std::vector<BoxSlot> order;
@@ -268,6 +302,7 @@ struct BatchStage::State {
            (changedBag[p]&&!sr->validGen2BagPocket(static_cast<int>(p))))
             return fail("Source Bag round-trip verification failed");
     result.sourceAfter=sr->data();
+    }
     result.destinationAfter=std::move(destinationAfter);
     result.converted=converted.front();result.convertedBatch=std::move(converted);
     result.ok=true;

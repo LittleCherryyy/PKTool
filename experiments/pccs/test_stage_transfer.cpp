@@ -255,6 +255,35 @@ int main() {
     REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},1).ok);
     REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},8).ok);
     REQUIRE(!br::stageCrystalToRuby(std::vector<uint8_t>{1,2,3},originalD,{0,1},{0,5}).ok);
+    // Native Bank source: mixed formats, per-entity languages and exact
+    // preservation of other Bank slots, including held items on refusal.
+    {
+        pktool::bank::Bank bank;
+        auto g1=sv::loadSaveFile(fakegb::blankGen1(false,false));
+        auto g2=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Gs));
+        REQUIRE(g1&&g2);
+        pk::create4::Trainer t;t.name="ASH";t.tid=12345;t.version=g1->gameVersion();t.language=2;
+        std::array<uint8_t,pk::entity::kMaxPartySize> native{};
+        pk::create4::encode(pk::create4::newPokemon(t,1,5,255),native.data());
+        REQUIRE(bank.set(0,0,1,native.data()));
+        t.version=g2->gameVersion();t.language=3;t.name="ÉRIC";
+        auto mon=pk::create4::newPokemon(t,155,5,255);mon.nickname="ÉCLAIR";mon.heldItem=0;
+        pk::create4::encode(mon,native.data());native[1]=0;
+        REQUIRE(bank.set(0,1,2,native.data()));
+        native[1]=1;REQUIRE(bank.set(0,2,2,native.data()));
+        REQUIRE(bank.setBoxName(0,"Classic"));
+        const auto initial=bank.serialize();
+        auto refused=br::stageGbBatch(initial,originalD,{{{0,2},{0,0}}});
+        REQUIRE(!refused.ok&&refused.sourceAfter.empty()&&refused.destinationAfter.empty());
+        auto batch=br::stageGbBatch(initial,originalD,{{{0,0},{0,0}},{{0,1},{0,1}}});
+        REQUIRE(batch.ok&&batch.convertedBatch.size()==2);
+        REQUIRE(pk::pk3::toPokemon(batch.convertedBatch[0].data(),80).language==2);
+        REQUIRE(pk::pk3::toPokemon(batch.convertedBatch[1].data(),80).language==3);
+        pktool::bank::Bank after;
+        REQUIRE(br::loadTransferBank(batch.sourceAfter,after)&&after.count()==1&&after.format(0,2)==2);
+        REQUIRE(after.entity(0,2)[1]==1&&after.boxName(0)=="Classic"&&bank.serialize()==initial);
+        REQUIRE(!br::stageGbBatch(initial,initial,{{{0,0},{0,4}}}).ok);
+    }
     // Optional host-only audit corpus: no ROMs, no real player saves.
     // Run all six source languages, both generations, and three destination
     // save families. Retain conversion refusals in the report rather than

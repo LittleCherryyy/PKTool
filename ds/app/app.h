@@ -199,12 +199,13 @@ private:
     void transporterPreview();
     void tickTransportPreview();
     enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review, History };
-    bool transportBankDest_=false;
+    bool transportBankDest_=false,transportBankSource_=false;
     int transportResultPage_=0;
     std::vector<std::string> transportHistoryPaths_;
     pokemon::pccs_bridge::TransferHistory transportHistory_;
     int transportHistoryIndex_=0;
     void openTransportBank();
+    void openTransportBankSource();
     void openTransferHistory();
     void loadTransferHistory();
     TransportPhase transportPhase_ = TransportPhase::Source;
