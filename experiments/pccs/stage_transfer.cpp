@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "stage_transfer.h"
 #include "pccs_policy.h"
+#include "pccs_preflight.h"
+#include "core/pokemon/pk1.h"
+#include "core/pokemon/pk2.h"
 #include "core/pokemon/pk3.h"
 #include "core/saves/save_commit.h"
 #include "core/saves/save_file.h"
@@ -65,7 +68,7 @@ bool destinationMatches(const SaveFile& before,const SaveFile& after,const std::
 }
 }
 StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
-                           const std::vector<TransferPair>& pairs) {
+                           const std::vector<TransferPair>& pairs,uint8_t sourceLanguage) {
     StagedTransfer result;
     auto fail=[&](const std::string& error) {
         result.error=error;
@@ -77,8 +80,12 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
             return fail("Duplicate source or destination slot");
     auto s=saves::loadSaveFile(source),d=saves::loadSaveFile(destination);
     if(!s||!d||!saves::validateSave(*s)||!saves::validateSave(*d)) return fail("Invalid save or checksum");
-    if((s->format()!=1&&s->format()!=2)||d->format()!=3||s->language()!=2||d->language()!=2)
-        return fail("Only English Gen I/II to Gen III saves supported");
+    if((s->format()!=1&&s->format()!=2)||d->format()!=3||
+       !supportedLanguage(s->language())||!supportedLanguage(d->language()))
+        return fail("Unsupported save format or language");
+    if(!sourceLanguage) sourceLanguage=s->language();
+    if(!supportedLanguage(sourceLanguage)||(sourceLanguage==1)!=(s->language()==1))
+        return fail("Selected language does not match GB save layout");
     std::vector<std::array<uint8_t,80>> converted;
     converted.reserve(pairs.size());
     // Convert immutable original slots first. No staged save allocations during PCCS.
@@ -89,6 +96,9 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
         Blob selected{},existing{};
         if(s->readBoxSlot(p.from.box,p.from.slot,selected.data())!=SlotState::Valid) return fail(prefix+"Source slot is not valid");
         if(d->readBoxSlot(p.to.box,p.to.slot,existing.data())!=SlotState::Empty) return fail(prefix+"Destination slot is not empty");
+        // International GB saves contain no language byte per Pokemon.
+        // The explicit source language applies only to this temporary entity.
+        selected[s->format()==1?pk1::kLanguageOffset:pk2::kLanguageOffset]=sourceLanguage;
         auto preview=previewGbToGba(selected.data(),s->storedSize(),s->format());
         if(!preview.ok) {
             for(auto& note:preview.notes) result.notes.push_back(prefix+note);

@@ -64,6 +64,8 @@ int main() {
         for(int i=0;i<4;++i) press(app,ui::kKeyA);
         press(app,ui::kKeyStart);
         press(app,ui::kKeyStart);
+        REQUIRE(!io::fileExists(j)&&same(a,sb)&&same(b,db));
+        press(app,ui::kKeyA); // skip visual link animation, commit next frame
         REQUIRE(std::string(app.screenName())=="TransferRecovery");
         REQUIRE(br::inspectActiveJournal(j).state==br::StartupState::Completed);
         REQUIRE(!app.openSave(a));
@@ -123,6 +125,8 @@ int main() {
             press(app,ui::kKeyStart); // no writes until second START
             REQUIRE(same(ga,bs)&&same(eb,bd)&&!io::fileExists(bj));
             press(app,ui::kKeyStart);
+            REQUIRE(!io::fileExists(bj)&&same(ga,bs)&&same(eb,bd));
+            press(app,ui::kKeyA);
             REQUIRE(std::string(app.screenName())=="TransferRecovery");
             REQUIRE(br::inspectActiveJournal(bj).state==br::StartupState::Completed);
             REQUIRE(!same(ga,bs)&&!same(eb,bd));

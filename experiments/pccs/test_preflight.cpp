@@ -15,7 +15,9 @@ int main() {
     assert(preflight(fixture.data(),fixture.size())==Preflight::Ready);
     assert(preflight(nullptr,72)==Preflight::InvalidSize);
     assert(preflight(fixture.data(),71)==Preflight::InvalidSize);
-    test(70,1,Preflight::UnsupportedLanguage);
+    for(uint8_t lang:{1,2,3,4,5,7}) test(70,lang,Preflight::Ready);
+    test(70,8,Preflight::UnsupportedLanguage);
+    test(70,6,Preflight::UnsupportedLanguage);
     test(70,0,Preflight::UnsupportedLanguage);
     test(71,1,Preflight::Egg);
     test(0,0,Preflight::InvalidSpecies);
@@ -25,5 +27,5 @@ int main() {
     test(0,251,Preflight::Mythical);
     test(31,0,Preflight::InvalidLevel);
     test(31,101,Preflight::InvalidLevel);
-    std::puts("PASS: 13 preflight assertions (synthetic entities; no conversion or saves tested)");
+    std::puts("PASS: multilingual preflight assertions (synthetic entities; no conversion or saves tested)");
 }

@@ -21,7 +21,7 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
     if (generation != 1 && generation != 2) { result.error="Unsupported source generation"; return result; }
     if (generation == 1) {
         if (!entity || size != pk1::kEntitySize) { result.error="Invalid PK1 size"; return result; }
-        if (entity[pk1::kLanguageOffset] != 2) { result.error="English saves only"; return result; }
+        if (!supportedLanguage(entity[pk1::kLanguageOffset])) { result.error="Unsupported language"; return result; }
         if (entity[0] >= 191 || !data::speciesFromGen1(entity[0]) ||
             data::speciesFromGen1(entity[0]) > 150) { result.error="Unsupported Gen I species or mythical"; return result; }
         if (!entity[pk1::offset::kBoxLevel] || entity[pk1::offset::kBoxLevel] > 100) {
@@ -30,7 +30,7 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
     } else switch (preflight(entity, size)) {
     case Preflight::Ready: break;
     case Preflight::InvalidSize: result.error = "Invalid PK2 entity size"; return result;
-    case Preflight::UnsupportedLanguage: result.error = "English saves only in VPT001"; return result;
+    case Preflight::UnsupportedLanguage: result.error = "Unsupported source language"; return result;
     case Preflight::Egg: result.error = "Hatch the egg first"; return result;
     case Preflight::InvalidSpecies: result.error = "Invalid Generation II species"; return result;
     case Preflight::HeldItem: result.error = "Remove the held item first"; return result;
@@ -50,6 +50,17 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
         result.error = "Source legality cannot be confirmed";
         return result;
     }
+    const auto sourceLanguage=static_cast<::Language>(original.language);
+    // A Japanese name must terminate within its six-byte field. Avoid
+    // reading beyond the logical field in the pinned converter.
+    const auto validName=[&](size_t off, size_t max) {
+        for(size_t i=0;i<=max;++i) if(entity[off+i]==0x50) return true;
+        return false;
+    };
+    if(!validName(generation==1?pk1::kOtOffset:pk2::kOtOffset,original.language==1?5:7) ||
+       !validName(generation==1?pk1::kNicknameOffset:pk2::kNicknameOffset,original.language==1?5:10)) {
+        result.error="Invalid source name termination"; return result;
+    }
     ::PokemonTables table;
     ::Gen3Pokemon converted;
     const auto otOffset = generation==1 ? pk1::kOtOffset : pk2::kOtOffset;
@@ -60,13 +71,13 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
         // Gen II traits from its original DVs before checking the PK3.
         original.gender = gb::genderFromDvs(original.species,original.ivs);
         original.shiny = gb::isShinyDvs(original.ivs);
-        ::Gen1Pokemon source(::ENGLISH);
-        source.loadData(::ENGLISH,entity,entity+nickOffset,entity+otOffset,entity[0]);
+        ::Gen1Pokemon source(sourceLanguage);
+        source.loadData(sourceLanguage,entity,entity+nickOffset,entity+otOffset,entity[0]);
         convertedOk = source.convertToGen3(&table,&converted,::LEGAL,false);
         result.notes.push_back("Gen I: gender and shiny derived from original DVs");
     } else {
-        ::Gen2Pokemon source(::ENGLISH);
-        source.loadData(::ENGLISH,entity,entity+nickOffset,entity+otOffset,entity[0]);
+        ::Gen2Pokemon source(sourceLanguage);
+        source.loadData(sourceLanguage,entity,entity+nickOffset,entity+otOffset,entity[0]);
         convertedOk = source.convertToGen3(&table,&converted,::LEGAL,false);
     }
     if (!convertedOk) {

@@ -739,6 +739,15 @@ int App::bobOffset() const {
 
 bool App::updateFrame(const Input& rawInput) {
 #ifdef VPT_TRANSPORTER_PREVIEW
+    // Animation is a pre-commit presentation; no writes until it finishes.
+    if(transportAnimating_) {
+        if(frame_-transportAnimationStart_>=90 || (rawInput.pressed&(kKeyA|kKeyStart))) {
+            transportAnimating_=false;
+            pending_=Pending::TransferCommit;
+            redraw_=true;
+        } else if((frame_-transportAnimationStart_)%4==0) redraw_=true;
+        return true;
+    }
     // Recovery is modal, before pending writes, touch routing or any editor action.
     if(screen_==Screen::TransferRecovery) {
 #ifdef VPT_TRANSPORTER_WRITE

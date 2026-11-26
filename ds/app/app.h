@@ -194,6 +194,15 @@ private:
     int transportCursor_ = 0, transportScroll_ = 0;
     std::vector<std::pair<int,int>> transportSelected_;
     bool transportAccepted_ = false;
+    uint8_t transportLanguage_=2, transportGeneration_=2;
+    bool transportAnimating_=false;
+    uint32_t transportAnimationStart_=0;
+    std::vector<pokemon::Pokemon> transportMons_,transportResultMons_;
+    std::vector<uint16_t> transportBoxSpecies_;
+    int transportBoxSlots_=0;
+    void refreshTransportNames();
+    void drawTransportSprite(gfx::Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t generation);
+    void drawTransportAnimation(gfx::Canvas& top,gfx::Canvas& bottom);
 #endif
     void updateDialog(const Input& in);
     int touchedZone(const Input& in) const;

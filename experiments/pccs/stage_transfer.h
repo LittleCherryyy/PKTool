@@ -19,7 +19,7 @@ struct StagedTransfer {
 // ROM metadata or explicit user selection; Ruby/Sapphire share save format.
 StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,
                             const std::vector<uint8_t>& destination,
-                            const std::vector<TransferPair>& pairs);
+                            const std::vector<TransferPair>& pairs, uint8_t sourceLanguage=0);
 StagedTransfer stageCrystalToRuby(const std::vector<uint8_t>& source,
                                   const std::vector<uint8_t>& destination,
                                   BoxSlot from, BoxSlot to);

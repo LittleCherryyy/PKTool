@@ -94,6 +94,15 @@ int main() {
             REQUIRE(out->readBoxSlot(0,0,read.data())==sv::SlotState::Valid && pk::pk3::toPokemon(read.data(),80).species==species);
         }
     }
+    // Same western save geometry, language explicitly supplied by user.
+    for(uint8_t lang:{2,3,4,5,7}) {
+        auto multilingual=br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},lang);
+        if(!multilingual.ok) {std::fprintf(stderr,"Language %u: %s\n",lang,multilingual.error.c_str());for(auto& n:multilingual.notes)std::fprintf(stderr,"%s\n",n.c_str());}
+        REQUIRE(multilingual.ok);
+        REQUIRE(pk::pk3::toPokemon(multilingual.converted.data(),80).language==lang);
+    }
+    REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},1).ok);
+    REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},8).ok);
     REQUIRE(!br::stageCrystalToRuby(std::vector<uint8_t>{1,2,3},originalD,{0,1},{0,5}).ok);
     std::puts("PASS: staged Crystal to Ruby/Sapphire save round-trip; source compaction, exact destination, party and other boxes preserved; rejection cases passed");
     return 0;
