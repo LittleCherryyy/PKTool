@@ -86,6 +86,63 @@ int main() {
     REQUIRE(dr->readBoxSlot(0,0,raw.data())==sv::SlotState::Valid);
     REQUIRE(pk::pk3::toPokemon(raw.data(),80).species==155);
     REQUIRE(!io::fileExists(a+".vpt-old")&&!io::fileExists(b+".vpt-old"));
+    // Batch end-to-end UI on a separate pair of synthetic save files.
+    {
+        const auto batchRoot=root+"/batch";
+        REQUIRE(io::makeDirectories(batchRoot));
+        auto gs=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Gs));
+        auto em=sv::loadSaveFile(fake::blankGen3(sv::Game::Emerald));
+        REQUIRE(gs&&em);
+        tr.version=39;
+        const uint16_t species[]={155,158,152};
+        for(int i=0;i<3;++i) {
+            auto mon=pk::create4::newPokemon(tr,species[i],5,100+species[i]);
+            mon.heldItem=0;
+            pk::create4::encode(mon,raw.data());
+            REQUIRE(gs->writeBoxSlot(0,i,raw.data()));
+        }
+        gs->refreshChecksums();em->refreshChecksums();
+        const auto bs=gs->data(),bd=em->data();
+        const auto ga=batchRoot+"/gold.sav",eb=batchRoot+"/emerald.sav";
+        ui::Config bc=cfg;bc.scanRoot=batchRoot;bc.dataDir=batchRoot+"/PKTOOL";
+        const auto bj=bc.dataDir+"/transporter/active.vpt";
+        REQUIRE(put(ga,bs)&&put(eb,bd));
+        {
+            ui::App app(bc);
+            press(app,ui::kKeyY);press(app,ui::kKeyA);
+            press(app,ui::kKeyX); // first source
+            press(app,ui::kKeyDown);press(app,ui::kKeyDown);
+            press(app,ui::kKeyX); // third source
+            press(app,ui::kKeyA); // selected entries -> destination
+            press(app,ui::kKeyA); // Emerald
+            press(app,ui::kKeyDown);press(app,ui::kKeyA); // first destination slot 1
+            REQUIRE(same(ga,bs)&&same(eb,bd)&&!io::fileExists(bj));
+            press(app,ui::kKeyStart); // no writes until second START
+            REQUIRE(same(ga,bs)&&same(eb,bd)&&!io::fileExists(bj));
+            press(app,ui::kKeyStart);
+            REQUIRE(std::string(app.screenName())=="TransferRecovery");
+            REQUIRE(br::inspectActiveJournal(bj).state==br::StartupState::Completed);
+            REQUIRE(!same(ga,bs)&&!same(eb,bd));
+        }
+        {
+            ui::App app(bc);
+            REQUIRE(std::string(app.screenName())=="TransferRecovery");
+            press(app,ui::kKeyX);
+            REQUIRE(std::string(app.screenName())=="Home");
+            REQUIRE(br::inspectActiveJournal(bj).state==br::StartupState::Clear);
+        }
+        std::vector<uint8_t> ss,dd;
+        REQUIRE(io::readFile(ga,ss)&&io::readFile(eb,dd));
+        auto src=sv::loadSaveFile(ss),dst=sv::loadSaveFile(dd);
+        REQUIRE(src&&dst&&sv::validateSave(*src)&&sv::validateSave(*dst));
+        REQUIRE(src->readBoxSlot(0,0,raw.data())==sv::SlotState::Valid && raw[0]==158);
+        REQUIRE(src->readBoxSlot(0,1,raw.data())==sv::SlotState::Empty);
+        REQUIRE(dst->readBoxSlot(0,0,raw.data())==sv::SlotState::Empty);
+        REQUIRE(dst->readBoxSlot(0,1,raw.data())==sv::SlotState::Valid && pk::pk3::toPokemon(raw.data(),80).species==155);
+        REQUIRE(dst->readBoxSlot(0,2,raw.data())==sv::SlotState::Valid && pk::pk3::toPokemon(raw.data(),80).species==152);
+        REQUIRE(!io::fileExists(ga+".vpt-old")&&!io::fileExists(eb+".vpt-old"));
+        std::puts("PASS: Gold to Emerald batch UI, exact order, source compaction, commit and restart/archive");
+    }
     // Verify the startup UI refuses a partially created journal too.
     REQUIRE(put(j+".new",{1,2,3}));
     ui::App locked(cfg);REQUIRE(std::string(locked.screenName())=="TransferRecovery");
