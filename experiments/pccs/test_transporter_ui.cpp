@@ -230,7 +230,27 @@ int main() {
         press(app,ui::kKeyA);
         REQUIRE(std::string(app.screenName())=="Transporter"&&app.transporterRows().size()==2);
         press(app,ui::kKeyY);
-        REQUIRE(app.transporterRows().size()==1);
+        REQUIRE(app.transporterRows().size()==2); // no in-session full rescan
+        press(app,ui::kKeyB);
+        io::resetReadStats();press(app,ui::kKeyY);
+        REQUIRE(app.transporterRows().size()==2&&io::readStats().opens==0);
+        ui::App fresh(rc);press(fresh,ui::kKeyY);
+        REQUIRE(fresh.transporterRows().size()==1);
+    }
+    // The two entry points share one completed discovery, including an empty catalog.
+    {
+        const auto sessionRoot=root+"/session";
+        REQUIRE(io::makeDirectories(sessionRoot));
+        REQUIRE(put(sessionRoot+"/crystal.sav",sb)&&put(sessionRoot+"/ruby.sav",db));
+        ui::Config sc=cfg;sc.scanRoot=sessionRoot;sc.dataDir=sessionRoot+"/PKTOOL";
+        ui::App app(sc);press(app,ui::kKeyA);
+        REQUIRE(std::string(app.screenName())=="Browser");
+        press(app,ui::kKeyB);
+        io::resetReadStats();press(app,ui::kKeyY);
+        REQUIRE(app.transporterRows().size()==1&&io::readStats().opens==0);
+        press(app,ui::kKeyB);
+        io::resetReadStats();press(app,ui::kKeyA);
+        REQUIRE(std::string(app.screenName())=="Browser"&&io::readStats().opens==0);
     }
     // Capacity is displayed before opening a GBA save and an insufficient
     // save cannot advance; exactly two free slots fit a two-Pokemon batch.

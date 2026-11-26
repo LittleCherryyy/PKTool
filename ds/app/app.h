@@ -186,6 +186,8 @@ private:
     void drawTransporter(gfx::Canvas& top, gfx::Canvas& bottom);
     void transporterSelectSave(bool source);
     void startTransportScan(bool source);
+    void syncTransportCatalog();
+    void refreshSessionSave(const std::string& path);
     void tickTransportScan();
     void showTransportSaveList(bool source,const std::string& message="",const std::string& focus="");
     void tickTransportBoxes();

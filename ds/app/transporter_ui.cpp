@@ -144,17 +144,11 @@ void App::runTransferRecovery() {
         r=br::recoverActiveJournal(j);
     else if(transferStartup_.state==br::StartupState::Completed)
         r=br::archiveActiveJournal(j);
-    scanned_=false;
-    // Same-second FAT timestamps may not change. Invalidate only the saves
-    // actually involved; all other catalog entries can be reused.
-    const auto changed=[&](const saves::SaveSummary& s){
-        return io::fileName(s.path)==io::fileName(transferStartup_.source) ||
-               io::fileName(s.path)==io::fileName(transferStartup_.destination);
-    };
-    saveFiles_.erase(std::remove_if(saveFiles_.begin(),saveFiles_.end(),changed),saveFiles_.end());
-    transportCatalog_.erase(std::remove_if(transportCatalog_.begin(),transportCatalog_.end(),changed),transportCatalog_.end());
+    const auto source=transferStartup_.source,destination=transferStartup_.destination;
     if(refreshTransferGate()) {
         if(r.status==br::JournalStatus::Complete) {
+            // Archive has succeeded; refresh only the two known paths.
+            refreshSessionSave(source);refreshSessionSave(destination);
             homeCursor_=4;
             transportRows_.clear();transportNotes_.clear();transportSelected_.clear();
         } else showMessage("Transporter",r.message);
@@ -202,8 +196,9 @@ void App::openTransporter() {
     transportBoxSpecies_.clear();transportAnimating_=false;
     transportMessage_.clear();transportAccepted_=false;transportConfirm_=false;
     screen_=Screen::Transporter;
+    syncTransportCatalog();
     showTransportSaveList(true);
-    startTransportScan(true);
+    if(!scanned_) startTransportScan(true);
 }
 void App::showTransportSaveList(bool source,const std::string& message,const std::string& focus) {
     transportConfirm_=false;transportAccepted_=false;
@@ -235,21 +230,46 @@ void App::showTransportSaveList(bool source,const std::string& message,const std
     }
     transportMessage_=message;redraw_=true;
 }
+void App::syncTransportCatalog() {
+    transportCatalog_.clear();
+    for(const auto& save:saveFiles_) if(saves::gameGeneration(save.game)<=3)
+        transportCatalog_.push_back(save);
+}
+void App::refreshSessionSave(const std::string& path) {
+    if(!scanned_||path.empty()) return;
+    const auto canonical=[](std::string p) {
+#ifdef ARM9
+        if(p.rfind("sd:",0)==0) p.erase(0,3);
+        for(auto& c:p) if(c>='A'&&c<='Z') c=static_cast<char>(c-'A'+'a');
+#endif
+        return p;
+    };
+    const auto key=canonical(path);
+    auto it=std::find_if(saveFiles_.begin(),saveFiles_.end(),[&](const auto& x){return canonical(x.path)==key;});
+    const auto stablePath=it==saveFiles_.end()?path:it->path;
+    saves::SaveSummary updated;
+    long size=0,stamp=0;
+    if(io::fileStamp(stablePath,size,stamp)&&saves::probeSave(stablePath,updated)) {
+        updated.fileSize=size;updated.modified=stamp;
+        if(it!=saveFiles_.end()) *it=std::move(updated);
+        else saveFiles_.push_back(std::move(updated));
+    } else if(it!=saveFiles_.end()) saveFiles_.erase(it);
+    std::sort(saveFiles_.begin(),saveFiles_.end(),[](const auto& x,const auto& y){return x.path<y.path;});
+    browserCursor_=clampInt(browserCursor_,0,std::max(0,static_cast<int>(saveFiles_.size())-1));
+    syncTransportCatalog();
+}
 void App::startTransportScan(bool source) {
+    if(scanned_) return;
     transportScanSource_=source;
-    auto previous=transportCatalog_;
-    // Reuse summaries from the ordinary editor when available.
-    for(const auto& old:saveFiles_) {
-        if(saves::gameGeneration(old.game)>3) continue;
-        if(std::none_of(previous.begin(),previous.end(),[&](const auto& a){return a.path==old.path;}))
-            previous.push_back(old);
-    }
-    transportScan_.reset(new saves::IncrementalSaveScan(config_.scanRoot,3,3,previous));
+    // One discovery of all supported generations, shared by both entry points.
+    transportScan_.reset(new saves::IncrementalSaveScan(config_.scanRoot,3,5,{}));
 }
 void App::tickTransportScan() {
     if(!transportScan_->step()) return;
-    transportCatalog_=transportScan_->take();transportScan_.reset();
-    showTransportSaveList(transportScanSource_,"Y: Refresh saves");
+    saveFiles_=transportScan_->take();transportScan_.reset();
+    scanned_=true;syncTransportCatalog();
+    if(screen_==Screen::Browser) {browserCursor_=browserScroll_=0;return;}
+    showTransportSaveList(transportScanSource_);
 }
 void App::cancelTransportBusy() {
     if(transportBatch_) {
@@ -258,7 +278,8 @@ void App::cancelTransportBusy() {
         showTransportSaveList(false,"Review cancelled - no saves changed",focus);
     } else if(transportScan_) {
         transportScan_.reset();
-        showTransportSaveList(transportScanSource_,"Scan cancelled - Y to refresh");
+        if(screen_==Screen::Browser) screen_=Screen::Home;
+        else showTransportSaveList(transportScanSource_,"Scan cancelled - Y to retry");
     } else {
         const auto focus=transportLoadPath_;
         showTransportSaveList(transportLoadSource_,"Reading cancelled",focus);
@@ -267,7 +288,7 @@ void App::cancelTransportBusy() {
 void App::transporterSelectSave(bool source) {
     if(transportCursor_<0 || transportCursor_>=static_cast<int>(transportSaves_.size())) return;
     if(!source&&!destinationReady(transportSaves_[transportCursor_],transportSelected_.size())) {
-        transportMessage_="Destination unavailable - choose another or Y refresh";return;
+        transportMessage_="Destination unavailable - choose another or restart PKTool";return;
     }
     auto path=transportSaves_[transportCursor_].path;
 #ifdef ARM9
@@ -420,10 +441,10 @@ void App::tickTransportPreview() {
 }
 void App::updateTransporter(const Input& in) {
     if((in.pressed&kKeyY)&&(transportPhase_==TransportPhase::Source||transportPhase_==TransportPhase::Destination)) {
-        // Explicit refresh also handles FAT's coarse timestamp granularity.
-        transportCatalog_.clear();
-        saveFiles_.clear();scanned_=false;
-        startTransportScan(transportPhase_==TransportPhase::Source);return;
+        // Retry an incomplete first scan only. A completed session catalog
+        // is never rescanned; restart the homebrew to discover external files.
+        if(!scanned_) startTransportScan(transportPhase_==TransportPhase::Source);
+        return;
     }
     if(in.pressed&kKeyB) {
         if(transportPhase_==TransportPhase::Review&&!transportAccepted_) {
@@ -527,7 +548,7 @@ void App::updateTransporter(const Input& in) {
         case TransportPhase::Destination:
             if(destinationReady(transportSaves_[transportCursor_],transportSelected_.size()))
                 pending_=Pending::TransferLoadDestination;
-            else transportMessage_="Destination unavailable - choose another or Y refresh";
+            else transportMessage_="Destination unavailable - choose another or restart PKTool";
             break;
         case TransportPhase::DestinationSlot: pending_=Pending::TransferPreview;break;
         case TransportPhase::Review:
@@ -756,7 +777,8 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
             bottom.text(kFontSmall,21,y+16,224,Align::Left,destinationStatus(item,needed)+" | "+std::to_string(std::max(0,item.freeBoxSlots))+" free",c);
             zones_.push_back({4,y,248,31,kZoneItem+index});
         }
-        drawHints(bottom,{{"A","Select"},{"Y","Refresh"},{"B","Back"}},{kKeyA,kKeyY,kKeyB});
+        if(!scanned_) drawHints(bottom,{{"Y","Retry"},{"B","Back"}},{kKeyY,kKeyB});
+        else drawHints(bottom,{{"A","Select"},{"B","Back"}},{kKeyA,kKeyB});
         return;
     }
     const char* phase="Select GB/GBC save";
@@ -792,7 +814,8 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
     else if(transportPhase_==TransportPhase::SourceMon)
         drawHints(bottom,{{"X","Mark"},{"A","Next"},{"B","Cancel"}},{kKeyX,kKeyA,kKeyB});
     else if(transportPhase_==TransportPhase::Source||transportPhase_==TransportPhase::Destination)
-        drawHints(bottom,{{"A","Select"},{"Y","Refresh"},{"B","Back"}},{kKeyA,kKeyY,kKeyB});
+        if(!scanned_) drawHints(bottom,{{"Y","Retry"},{"B","Back"}},{kKeyY,kKeyB});
+        else drawHints(bottom,{{"A","Select"},{"B","Back"}},{kKeyA,kKeyB});
     else drawHints(bottom,{{"A","Select"},{"+","Move"},{"B","Back"}},{kKeyA,0,kKeyB});
 }
 }

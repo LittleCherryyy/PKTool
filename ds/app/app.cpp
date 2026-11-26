@@ -739,7 +739,7 @@ int App::bobOffset() const {
 
 bool App::updateFrame(const Input& rawInput) {
 #ifdef VPT_TRANSPORTER_PREVIEW
-    if(screen_==Screen::Transporter && transporterBusy()) {
+    if((screen_==Screen::Transporter && transporterBusy()) || (screen_==Screen::Browser && transportScan_)) {
         if(rawInput.pressed&kKeyB) cancelTransportBusy();
         else if(transportBatch_) tickTransportPreview();
         else if(transportScan_) tickTransportScan();
@@ -892,6 +892,13 @@ void App::runPending() {
     if (action == Pending::Write || action == Pending::Restore) sprites_.clear();
     switch (action) {
         case Pending::Scan:
+#ifdef VPT_TRANSPORTER_PREVIEW
+            if(config_.transporterPreview) {
+                screen_=Screen::Browser;
+                startTransportScan(true);
+                break;
+            }
+#endif
             // A rescan (Y) only reads the files that changed since the last one.
             saveFiles_ = saves::findPokemonSaves(config_.scanRoot, 3, &saveFiles_);
             scanned_ = true;
@@ -911,6 +918,10 @@ void App::runPending() {
             }
             bankDirty_ = false;
             saves::CommitResult result = saves::commitSave(*save_, savePath_, backupDir());
+#ifdef VPT_TRANSPORTER_PREVIEW
+            if(config_.transporterPreview && result.status==saves::CommitResult::Status::Ok)
+                refreshSessionSave(savePath_);
+#endif
             if (result.status == saves::CommitResult::Status::Ok && !bankWithdrawn_.empty()) {
                 for (const auto& slot : bankWithdrawn_) bank_.clear(slot.first, slot.second);
                 bankWithdrawn_.clear();
@@ -936,6 +947,9 @@ void App::runPending() {
                 showMessage("Restore failed", io::describe(result));
                 break;
             }
+#ifdef VPT_TRANSPORTER_PREVIEW
+            if(config_.transporterPreview) refreshSessionSave(savePath_);
+#endif
             if (backupsReturn_ == Screen::SaveMenu) {
                 openSave(savePath_);
             }
@@ -1174,6 +1188,12 @@ void App::updateBrowser(const Input& in) {
     if (in.repeated & kKeyR) browserCursor_ = clampInt(browserCursor_ + 8, 0, std::max(0, count - 1));
     if (in.pressed & kKeyB) screen_ = Screen::Home;
     if (in.pressed & kKeyY) {
+#ifdef VPT_TRANSPORTER_PREVIEW
+        if(config_.transporterPreview) {
+            if(!scanned_) startBrowser();
+            return;
+        }
+#endif
         scanned_ = false;
         startBrowser();
     }
@@ -1218,6 +1238,10 @@ void App::backUpGbaCartridge() {
         showMessage(title, std::string("Could not write the copy:\n") + io::describe(written));
         return;
     }
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(config_.transporterPreview) refreshSessionSave(path);
+    else
+#endif
     scanned_ = false;  // the next browser visit lists the copy
     if (openSave(path)) {
         showMessage(title, std::string(info.gameName) + " backed up to\ngba/" + name +
@@ -2991,6 +3015,9 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
 }
 
 void App::drawBrowser(Canvas& top, Canvas& bottom) {
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(transportScan_) {drawTransporter(top,bottom);return;}
+#endif
     drawChrome(top, "Pok\xC3\xA9mon saves on the SD card", std::to_string(saveFiles_.size()) + " found", kAccent);
     top.roundRect(4, kBodyTop + 3, 248, 150, kBorder, kPanel);
     if (saveFiles_.empty()) {
@@ -3077,6 +3104,12 @@ void App::drawBrowser(Canvas& top, Canvas& bottom) {
         bottom.fillRect(246, 19, 2, trackH, kPanelDark);
         bottom.fillRect(246, thumbY, 2, thumbH, kAccent);
     }
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(config_.transporterPreview) {
+        drawHints(bottom, {{"A","Open"},{"X","Backups"},{"B","Back"}},{kKeyA,kKeyX,kKeyB});
+        return;
+    }
+#endif
     if (config_.gbaSlot != nullptr) {
         // Five hints do not fit: B (back) works as on every screen.
         drawHints(bottom, {{"A", "Open"}, {"X", "Backups"}, {"Y", "Rescan"}, {"SEL", "GBA"}},
