@@ -109,12 +109,16 @@ bool destinationMatches(const SaveFile& before,const SaveFile& after,const std::
     return true;
 }
 }
+bool loadTransferBank(const std::vector<uint8_t>& bytes,bank::Bank& bank) {
+    return bank.loadBytes(bytes)==bank::Bank::LoadResult::Ok && bank.serialize()==bytes;
+}
 struct BatchStage::State {
     const std::vector<uint8_t>& source;
     const std::vector<uint8_t>& destination;
     const std::vector<TransferPair> pairs;
     uint8_t sourceLanguage;
     std::unique_ptr<SaveFile> s,d;
+    std::unique_ptr<bank::Bank> bankDest;
     StagedTransfer result;
     std::vector<std::array<uint8_t,80>> converted;
     std::vector<Pocket> plannedBag;
@@ -127,14 +131,18 @@ struct BatchStage::State {
     bool step() {
         if(done) return true;
         if(!initialized) {
-    if(pairs.empty()||pairs.size()>kMaxBatch) return fail("Select 1-10 Pokemon");
+    if(pairs.empty()||pairs.size()>kMaxBatch) return fail("Select 1-30 Pokemon");
     for(size_t i=0;i<pairs.size();++i) for(size_t j=0;j<i;++j)
         if(sameSlot(pairs[i].from,pairs[j].from)||sameSlot(pairs[i].to,pairs[j].to))
             return fail("Duplicate source or destination slot");
-    s=saves::loadSaveFile(source);d=saves::loadSaveFile(destination);
-    if(!s||!d||!saves::validateSave(*s)||!saves::validateSave(*d)) return fail("Invalid save or checksum");
-    if((s->format()!=1&&s->format()!=2)||d->format()!=3||
-       !supportedLanguage(s->language())||!supportedLanguage(d->language()))
+    s=saves::loadSaveFile(source);
+    if(destination.size()>=4&&std::equal(destination.begin(),destination.begin()+4,"PKBK")) {
+        bankDest=std::make_unique<bank::Bank>();
+        if(!loadTransferBank(destination,*bankDest)) return fail("Bank needs validation or upgrade in editor");
+    } else d=saves::loadSaveFile(destination);
+    if(!s||!saves::validateSave(*s)||(!bankDest&&(!d||!saves::validateSave(*d)))) return fail("Invalid save or checksum");
+    if((s->format()!=1&&s->format()!=2)||!supportedLanguage(s->language())||
+       (!bankDest&&(d->format()!=3||!supportedLanguage(d->language()))))
         return fail("Unsupported save format or language");
     if(!sourceLanguage) sourceLanguage=s->language();
     if(!supportedLanguage(sourceLanguage)||(sourceLanguage==1)!=(s->language()==1))
@@ -159,7 +167,10 @@ struct BatchStage::State {
         else {
             selected[s->format()==1?pk1::kLanguageOffset:pk2::kLanguageOffset]=sourceLanguage;
             entry.mon=entity::decode(s->format(),selected.data(),s->storedSize());
-            if(!inBounds(*d,p.to)||d->readBoxSlot(p.to.box,p.to.slot,existing.data())!=SlotState::Empty)
+            const bool empty=bankDest?
+                (p.to.box>=0&&p.to.box<bank::Bank::kBoxCount&&p.to.slot>=0&&p.to.slot<bank::Bank::kSlotsPerBox&&!bankDest->format(p.to.box,p.to.slot)):
+                (inBounds(*d,p.to)&&d->readBoxSlot(p.to.box,p.to.slot,existing.data())==SlotState::Empty);
+            if(!empty)
                 entry.error="Destination slot is not empty";
             else if(s->format()==2 && selected[pk2::offset::kHeldItem]) {
                 const auto item=selected[pk2::offset::kHeldItem];heldItem=item;
@@ -195,7 +206,31 @@ struct BatchStage::State {
     // Stage and reload each save only once. Release mutable destination before
     // source staging to reduce the physical DSi heap peak.
     std::vector<uint8_t> destinationAfter;
-    {
+    if(bankDest) {
+        for(size_t i=0;i<pairs.size();++i) {
+            const auto to=pairs[i].to;
+            if(!bankDest->set(to.box,to.slot,3,converted[i].data())) return fail("Cannot stage Bank");
+        }
+        destinationAfter=bankDest->serialize();
+        bankDest.reset();
+        bank::Bank check;
+        if(destinationAfter.size()!=destination.size()||!loadTransferBank(destinationAfter,check))
+            return fail("Bank round-trip failed");
+        // Canonical byte image: only the selected slots, format header if
+        // needed, and trailing CRC may change. Verify exact converted data.
+        constexpr size_t base=8+bank::Bank::kBoxCount*bank::Bank::kBoxNameBytes;
+        constexpr size_t stride=4+bank::Bank::kEntitySize;
+        auto expected=destination;
+        for(size_t i=0;i<pairs.size();++i) {
+            auto to=pairs[i].to;
+            size_t off=base+stride*(to.box*bank::Bank::kSlotsPerBox+to.slot);
+            expected[off]=3;
+            std::copy(converted[i].begin(),converted[i].end(),expected.begin()+off+4);
+        }
+        expected[expected.size()-2]=destinationAfter[destinationAfter.size()-2];
+        expected.back()=destinationAfter.back();
+        if(expected!=destinationAfter) return fail("Unrelated Bank bytes changed");
+    } else {
         auto dd=saves::loadSaveFile(destination);
         if(!dd) return fail("Cannot stage destination");
         for(size_t i=0;i<pairs.size();++i) {

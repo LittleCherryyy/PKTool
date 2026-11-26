@@ -198,7 +198,15 @@ private:
     std::string transportLoadPath_;
     void transporterPreview();
     void tickTransportPreview();
-    enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review };
+    enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review, History };
+    bool transportBankDest_=false;
+    int transportResultPage_=0;
+    std::vector<std::string> transportHistoryPaths_;
+    pokemon::pccs_bridge::TransferHistory transportHistory_;
+    int transportHistoryIndex_=0;
+    void openTransportBank();
+    void openTransferHistory();
+    void loadTransferHistory();
     TransportPhase transportPhase_ = TransportPhase::Source;
     std::vector<saves::SaveSummary> transportSaves_, transportCatalog_;
     std::unique_ptr<saves::SaveFile> transportSave_;

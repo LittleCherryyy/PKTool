@@ -90,16 +90,19 @@ void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
         marqueeActive_ |= drawMarquee(top,8,113,240,Align::Left,"To: "+io::fileName(transferStartup_.destination),kMuted,frame_-marqueeStart_);
         marqueeActive_ |= drawMarquee(top,8,139,240,Align::Center,transferStartup_.message,kText,frame_-marqueeStart_);
         bottom.clear(rgb(49,104,85));
-        bottom.text(kFontSmall,0,2,256,Align::Center,"GBA PC - Transfer Complete",kText);
+        bottom.text(kFontSmall,0,2,256,Align::Center,transferStartup_.destination==bankPath()?"BANK - Transfer Complete":"GBA PC - Transfer Complete",kText);
         if(!transportResultMons_.empty()) {
-            for(size_t i=0;i<transportResultMons_.size();++i) {
-                const int x=5+static_cast<int>(i%5)*50,y=18+static_cast<int>(i/5)*42;
+            const size_t start=static_cast<size_t>(transportResultPage_)*10;
+            for(size_t i=start;i<std::min(start+10,transportResultMons_.size());++i) {
+                const int x=5+static_cast<int>((i-start)%5)*50,y=18+static_cast<int>((i-start)/5)*42;
                 bottom.roundRect(x,y,46,40,kBorder,kPanel);
                 drawTransportSprite(bottom,transportResultMons_[i],x+2,y+1,42,27,3);
                 bottom.text(kFontSmall,x,y+27,46,Align::Center,transportResultMons_[i].nickname,kText);
             }
         } else bottom.text(kFontSmall,0,53,256,Align::Center,"Original backups retained.",kText);
 #ifdef VPT_TRANSPORTER_WRITE
+        if(transportResultMons_.size()>10)
+            bottom.text(kFontSmall,0,101,256,Align::Center,"L/R: "+std::to_string(transportResultPage_+1)+"/"+std::to_string((transportResultMons_.size()+9)/10),kText);
         bottom.roundRect(18,109,220,44,kAccent,kPanel,2);
         bottom.text(kFontLarge,18,117,220,Align::Center,"Return to main menu",kText);
         bottom.text(kFontSmall,18,134,220,Align::Center,"A / B / X / START",kMuted);
@@ -148,7 +151,9 @@ void App::runTransferRecovery() {
     if(refreshTransferGate()) {
         if(r.status==br::JournalStatus::Complete) {
             // Archive has succeeded; refresh only the two known paths.
-            refreshSessionSave(source);refreshSessionSave(destination);
+            refreshSessionSave(source);
+            if(destination==bankPath()||destination=="sd:"+bankPath()) bankLoaded_=false;
+            else refreshSessionSave(destination);
             homeCursor_=4;
             transportRows_.clear();transportNotes_.clear();transportSelected_.clear();
         } else showMessage("Transporter",r.message);
@@ -201,7 +206,7 @@ void App::openTransporter() {
     if(!scanned_) startTransportScan(true);
 }
 void App::showTransportSaveList(bool source,const std::string& message,const std::string& focus) {
-    transportConfirm_=false;transportAccepted_=false;
+    transportConfirm_=false;transportAccepted_=false;transportBankDest_=false;
     transportSave_.reset();transportReview_.reset();
     std::vector<uint8_t>().swap(transportDestBytes_);
     transportDest_.clear();
@@ -284,6 +289,46 @@ void App::cancelTransportBusy() {
         const auto focus=transportLoadPath_;
         showTransportSaveList(transportLoadSource_,"Reading cancelled",focus);
     }
+}
+void App::openTransportBank() {
+    // Existing Bank only: do not create or migrate it implicitly in a transfer.
+    if(bankDirty_||bankHeld_>=0||!bankWithdrawn_.empty()) {transportMessage_="Finish Bank edits first";return;}
+    auto path=bankPath();
+#ifdef ARM9
+    if(!path.empty()&&path[0]=='/') path="sd:"+path;
+#endif
+    std::vector<uint8_t> bytes;
+    bank::Bank target;
+    if(!readImage(path,bytes)||!pokemon::pccs_bridge::loadTransferBank(bytes,target)) {
+        transportMessage_="Create or save Bank in editor first";return;
+    }
+    std::vector<std::pair<int,int>> positions;
+    for(int b=0;b<bank::Bank::kBoxCount;++b) for(int s=0;s<bank::Bank::kSlotsPerBox;++s)
+        if(!target.format(b,s)) positions.emplace_back(b,s);
+    if(positions.size()<transportSelected_.size()) {transportMessage_="Not enough free Bank slots";return;}
+    transportDest_=path;transportDestBytes_=std::move(bytes);transportBankDest_=true;
+    transportPositions_=std::move(positions);transportRows_.clear();
+    for(auto pos:transportPositions_) transportRows_.push_back(slotLabel(pos.first,pos.second)+" Empty");
+    transportRows_.resize(transportRows_.size()-transportSelected_.size()+1);
+    transportBoxSlots_=bank::Bank::kSlotsPerBox;
+    transportBoxSpecies_.assign(bank::Bank::kBoxCount*transportBoxSlots_,0);
+    for(int b=0;b<bank::Bank::kBoxCount;++b) for(int s=0;s<transportBoxSlots_;++s)
+        if(auto raw=target.entity(b,s))
+            transportBoxSpecies_[b*transportBoxSlots_+s]=pokemon::entity::decode(target.format(b,s),raw,bank::Bank::kEntitySize).species;
+    transportCursor_=transportScroll_=0;transportPhase_=TransportPhase::DestinationSlot;transportMessage_.clear();
+}
+void App::openTransferHistory() {
+    const auto j=activeTransferPath();
+    transportHistoryPaths_.clear();
+    for(const auto& p:io::listFiles(j.substr(0,j.find_last_of('/')),""))
+        if(io::fileName(p).rfind("active.vpt.archive-",0)==0) transportHistoryPaths_.push_back(p);
+    transportHistoryIndex_=0;transportResultPage_=0;transportPhase_=TransportPhase::History;
+    loadTransferHistory();
+}
+void App::loadTransferHistory() {
+    transportHistory_={};transportResultPage_=0;
+    if(!transportHistoryPaths_.empty())
+        pokemon::pccs_bridge::readTransferHistory(transportHistoryPaths_[transportHistoryIndex_],transportHistory_);
 }
 void App::transporterSelectSave(bool source) {
     if(transportCursor_<0 || transportCursor_>=static_cast<int>(transportSaves_.size())) return;
@@ -410,7 +455,7 @@ void App::tickTransportPreview() {
     transportBatch_.reset();
     const auto& pairs=transportReviewPairs_;
     transportAccepted_=bool(transportReview_);
-    transportResultMons_.clear();
+    transportResultMons_.clear();transportResultPage_=0;
     if(transportReview_) {
         transportMessage_="Preview passed: "+std::to_string(pairs.size())+" Pokemon";
         const auto& batch=transportReview_->convertedBatch();
@@ -440,6 +485,30 @@ void App::tickTransportPreview() {
     transportCursor_=transportScroll_=0;
 }
 void App::updateTransporter(const Input& in) {
+    if(transportPhase_==TransportPhase::History) {
+        if(in.pressed&kKeyB) {showTransportSaveList(true);return;}
+        if(!transportHistoryPaths_.empty()&&(in.pressed&(kKeyLeft|kKeyRight))) {
+            transportHistoryIndex_=wrap(transportHistoryIndex_+((in.pressed&kKeyRight)?1:-1),static_cast<int>(transportHistoryPaths_.size()));
+            loadTransferHistory();
+        }
+        const int pages=std::max(1,static_cast<int>((transportHistory_.pokemon.size()+9)/10));
+        if(in.pressed&kKeyL) transportResultPage_=wrap(transportResultPage_-1,pages);
+        if(in.pressed&kKeyR) transportResultPage_=wrap(transportResultPage_+1,pages);
+        return;
+    }
+    if(transportPhase_==TransportPhase::Source&&scanned_&&(in.pressed&kKeyY)) {openTransferHistory();return;}
+    if(transportPhase_==TransportPhase::Destination&&(in.pressed&kKeySelect)) {openTransportBank();return;}
+    if(transportPhase_==TransportPhase::SourceMon&&!transportPositions_.empty()&&(in.pressed&kKeyY)) {
+        const int box=transportPositions_[transportCursor_].first;
+        // Whole box selection replaces the current selection explicitly.
+        transportSelected_.clear();
+        for(size_t i=0;i<transportPositions_.size();++i) {
+            const bool here=transportPositions_[i].first==box;
+            transportRows_[i][1]=here?'X':' ';
+            if(here) transportSelected_.push_back(transportPositions_[i]);
+        }
+        transportMessage_="Box selected: "+std::to_string(transportSelected_.size());return;
+    }
     if((in.pressed&kKeyY)&&(transportPhase_==TransportPhase::Source||transportPhase_==TransportPhase::Destination)) {
         // Retry an incomplete first scan only. A completed session catalog
         // is never rescanned; restart the homebrew to discover external files.
@@ -533,11 +602,12 @@ void App::updateTransporter(const Input& in) {
         } else if(transportSelected_.size()<pokemon::pccs_bridge::kMaxBatch) {
             transportSelected_.push_back(p);transportRows_[transportCursor_][1]='X';
         }
-        transportMessage_=std::to_string(transportSelected_.size())+" selected (max 10)";
+        transportMessage_=std::to_string(transportSelected_.size())+" selected (max 30)";
         return;
     }
     if(!activate || count==0) return;
     switch(transportPhase_) {
+        case TransportPhase::History:break;
         case TransportPhase::Source: pending_=Pending::TransferLoadSource;break;
         case TransportPhase::SourceMon: {
             if(transportSelected_.empty()) transportSelected_.push_back(transportPositions_[transportCursor_]);
@@ -660,6 +730,24 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
 
 void App::drawTransporter(Canvas& top,Canvas& bottom) {
     if(transportAnimating_) {drawTransportAnimation(top,bottom);return;}
+    if(transportPhase_==TransportPhase::History) {
+        drawChrome(top,"Transfer history","READ ONLY",kAccent);
+        top.text(kFontLarge,0,39,256,Align::Center,transportHistoryPaths_.empty()?"No archived transfers":std::to_string(transportHistoryIndex_+1)+" / "+std::to_string(transportHistoryPaths_.size()),kText);
+        marqueeActive_|=drawMarquee(top,8,69,240,Align::Left,"From: "+io::fileName(transportHistory_.source),kText,frame_-marqueeStart_);
+        marqueeActive_|=drawMarquee(top,8,87,240,Align::Left,"To: "+io::fileName(transportHistory_.destination),kText,frame_-marqueeStart_);
+        top.text(kFontSmall,0,113,256,Align::Center,std::to_string(transportHistory_.pokemon.size())+" Pokemon",kMuted);
+        top.text(kFontSmall,0,141,256,Align::Center,"LEFT / RIGHT: transfer",kMuted);
+        bottom.clear(kBackground);
+        const size_t start=static_cast<size_t>(transportResultPage_)*10;
+        for(size_t i=start;i<std::min(start+10,transportHistory_.pokemon.size());++i) {
+            const int x=5+static_cast<int>((i-start)%5)*50,y=16+static_cast<int>((i-start)/5)*57;
+            bottom.roundRect(x,y,46,54,kBorder,kPanel);
+            drawTransportSprite(bottom,transportHistory_.pokemon[i],x+2,y+1,42,38,3);
+            bottom.text(kFontSmall,x,y+40,46,Align::Center,transportHistory_.pokemon[i].nickname,kText);
+        }
+        bottom.text(kFontSmall,0,142,256,Align::Center,"L/R: page | archived snapshots",kMuted);
+        drawHints(bottom,{{"B","Back"}},{kKeyB});return;
+    }
     if(transportBatch_) {
         const auto done=transportBatch_->completed(),total=transportBatch_->total();
         drawChrome(top,"Checking transfer","READ ONLY",kAccent);
@@ -674,8 +762,9 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         }
         bottom.clear(kBackground);
         const auto& entries=transportBatch_->entries();
-        for(size_t i=0;i<total;++i) {
-            const int x=5+static_cast<int>(i%5)*50,y=25+static_cast<int>(i/5)*48;
+        const size_t start=std::min(done,total?total-1:0)/10*10;
+        for(size_t i=start;i<std::min(start+10,total);++i) {
+            const int x=5+static_cast<int>((i-start)%5)*50,y=25+static_cast<int>((i-start)/5)*48;
             const Color color=i<entries.size()?(entries[i].ready?kGreen:kRed):i==done?kYellow:kBorder;
             bottom.roundRect(x,y,46,43,color,kPanel,2);
             if(i<entries.size()&&entries[i].mon.species) drawIcon(bottom,x+4,y+1,38,28,entries[i].mon,false);
@@ -716,7 +805,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         top.text(kFontSmall,115,100,130,Align::Left,p.shiny?"SHINY":"",ink);
         top.text(kFontSmall,10,143,236,Align::Center,"Source language: "+std::string(data::languageName(transportLanguage_)),ink);
         top.text(kFontSmall,10,158,236,Align::Center,transportLanguage_==1?"Japanese layout":"LEFT / RIGHT: confirm language",ink);
-        top.text(kFontSmall,10,173,236,Align::Center,std::to_string(transportSelected_.size())+" / 10 selected",ink);
+        top.text(kFontSmall,10,173,236,Align::Center,std::to_string(transportSelected_.size())+" / 30 selected",ink);
         if(transportCursor_<transportScroll_) transportScroll_=transportCursor_;
         if(transportCursor_>=transportScroll_+7) transportScroll_=transportCursor_-6;
         for(int i=0;i<7&&transportScroll_+i<static_cast<int>(transportRows_.size());++i) {
@@ -727,14 +816,14 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
             if(index!=transportCursor_) bottom.text(kFontSmall,21,y+4,225,Align::Left,transportRows_[index],ink);
             zones_.push_back({4,y,248,23,kZoneItem+index});
         }
-        drawHints(bottom,{{"X","Mark"},{"A","Next"},{"B","Cancel"}},{kKeyX,kKeyA,kKeyB});
+        drawHints(bottom,{{"X","Mark"},{"Y","Box"},{"A","Next"},{"B","Back"}},{kKeyX,kKeyY,kKeyA,kKeyB});
         return;
     }
     if(transportPhase_==TransportPhase::DestinationSlot&&!transportPositions_.empty()) {
         const auto pos=transportPositions_[transportCursor_];
         const int box=pos.first;
         top.clear(rgb(32,93,108));bottom.clear(rgb(66,129,103));
-        top.text(kFontLarge,4,16,248,Align::Center,"GBA PC - BOX "+twoDigits(box+1),kText);
+        top.text(kFontLarge,4,16,248,Align::Center,std::string(transportBankDest_?"BANK - BOX ":"GBA PC - BOX ")+twoDigits(box+1),kText);
         top.text(kFontSmall,4,40,248,Align::Center,slotLabel(box,pos.second)+" | "+std::to_string(transportSelected_.size())+" Pokemon",kText);
         top.text(kFontSmall,4,72,248,Align::Center,std::to_string(transportPositions_.size())+" free in PC",kText);
         top.text(kFontSmall,4,90,248,Align::Center,"Green starts fit the entire batch.",kText);
@@ -826,11 +915,12 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
             zones_.push_back({4,y,248,31,kZoneItem+index});
         }
         if(!scanned_) drawHints(bottom,{{"Y","Retry"},{"B","Back"}},{kKeyY,kKeyB});
-        else drawHints(bottom,{{"A","Select"},{"B","Back"}},{kKeyA,kKeyB});
+        else drawHints(bottom,{{"A","Select"},{"SELECT","Bank"},{"B","Back"}},{kKeyA,kKeySelect,kKeyB});
         return;
     }
     const char* phase="Select GB/GBC save";
     switch(transportPhase_) {
+        case TransportPhase::History:break;
         case TransportPhase::Source:break;
         case TransportPhase::SourceMon:phase="Select boxed Pokemon";break;
         case TransportPhase::Destination:phase="Select GBA save";break;
@@ -860,10 +950,11 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         drawHints(bottom,{{"A","Recheck"},{"B","Saves"}},{kKeyA,kKeyB});
     }
     else if(transportPhase_==TransportPhase::SourceMon)
-        drawHints(bottom,{{"X","Mark"},{"A","Next"},{"B","Cancel"}},{kKeyX,kKeyA,kKeyB});
+        drawHints(bottom,{{"X","Mark"},{"Y","Box"},{"A","Next"},{"B","Back"}},{kKeyX,kKeyY,kKeyA,kKeyB});
     else if(transportPhase_==TransportPhase::Source||transportPhase_==TransportPhase::Destination)
         if(!scanned_) drawHints(bottom,{{"Y","Retry"},{"B","Back"}},{kKeyY,kKeyB});
-        else drawHints(bottom,{{"A","Select"},{"B","Back"}},{kKeyA,kKeyB});
+        else if(transportPhase_==TransportPhase::Source) drawHints(bottom,{{"A","Select"},{"Y","History"},{"B","Back"}},{kKeyA,kKeyY,kKeyB});
+        else drawHints(bottom,{{"A","Select"},{"SELECT","Bank"},{"B","Back"}},{kKeyA,kKeySelect,kKeyB});
     else drawHints(bottom,{{"A","Select"},{"+","Move"},{"B","Back"}},{kKeyA,0,kKeyB});
 }
 }

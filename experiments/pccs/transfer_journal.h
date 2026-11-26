@@ -14,6 +14,11 @@ struct StartupReview {
     StartupState state = StartupState::Blocked;
     std::string source, destination, message;
 };
+struct TransferHistory {
+    std::string source,destination;
+    std::vector<Pokemon> pokemon;
+};
+bool readTransferHistory(const std::string& archive,TransferHistory& history);
 StartupReview inspectActiveJournal(const std::string& journal);
 enum class JournalStatus { Complete, Interrupted, Conflict, IoError, InvalidJournal };
 struct JournalResult {

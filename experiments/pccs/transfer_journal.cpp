@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "transfer_journal.h"
 #include "core/io/file_io.h"
+#include "core/saves/save_file.h"
+#include "core/saves/save_commit.h"
+#include "core/pokemon/pk3.h"
 #if defined(ARM9) || defined(VPT_FAT_TEST)
 #define VPT_FAT_STORAGE 1
 #include <sys/stat.h>
@@ -260,6 +263,32 @@ JournalResult apply(const std::string& path,const Bytes& before,const Bytes& aft
         return result(Status::IoError,"Cannot verify replacement");
     return result(Status::Complete,"Verified replacement");
 }
+}
+bool readTransferHistory(const std::string& archive,TransferHistory& history) {
+    history={};
+    Bytes bytes;Record r;
+    if(!readBounded(archive,bytes,maxJournal)||!decode(bytes,r)) return false;
+    const auto marker=archive.rfind(".archive-");
+    if(marker==std::string::npos||archivePath(archive.substr(0,marker),bytes)!=archive) return false;
+    const bool bankFile=r.db.size()>=4&&std::equal(r.db.begin(),r.db.begin()+4,"PKBK");
+    if(bankFile) {
+        bank::Bank before,after;
+        if(!loadTransferBank(r.db,before)||!loadTransferBank(r.da,after)) return false;
+        for(int b=0;b<bank::Bank::kBoxCount;++b) for(int s=0;s<bank::Bank::kSlotsPerBox;++s)
+            if(!before.format(b,s)&&after.format(b,s)==3)
+                history.pokemon.push_back(pk3::toPokemon(after.entity(b,s),80));
+    } else {
+        auto before=saves::loadSaveFile(r.db),after=saves::loadSaveFile(r.da);
+        if(!before||!after||before->format()!=3||after->format()!=3||
+            !saves::validateSave(*before)||!saves::validateSave(*after)) return false;
+        std::array<uint8_t,entity::kMaxPartySize> raw{};
+        for(int b=0;b<before->boxCount();++b) for(int s=0;s<before->boxSlotCount();++s)
+            if(before->readBoxSlot(b,s,raw.data())==saves::SlotState::Empty&&
+               after->readBoxSlot(b,s,raw.data())==saves::SlotState::Valid)
+                history.pokemon.push_back(pk3::toPokemon(raw.data(),80));
+    }
+    if(history.pokemon.empty()||history.pokemon.size()>kMaxBatch) {history={};return false;}
+    history.source=r.source;history.destination=r.dest;return true;
 }
 std::unique_ptr<ReviewedTransfer> ReviewedTransfer::create(
     const std::string& source,const std::string& destination,

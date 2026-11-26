@@ -2,11 +2,14 @@
 #pragma once
 #include "pccs_bridge.h"
 #include "core/pokemon/pokemon.h"
+#include "core/bank/bank.h"
 #include <vector>
 #include <memory>
 namespace pktool::pokemon::pccs_bridge {
 struct BoxSlot { int box; int slot; };
-constexpr size_t kMaxBatch = 10;
+constexpr size_t kMaxBatch = 30;
+// Only canonical current-size Bank files can participate in the same-size journal.
+bool loadTransferBank(const std::vector<uint8_t>& bytes, pktool::bank::Bank& bank);
 struct TransferPair { BoxSlot from; BoxSlot to; };
 struct EntryReview {
     Pokemon mon;

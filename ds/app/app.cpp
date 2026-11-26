@@ -760,6 +760,9 @@ bool App::updateFrame(const Input& rawInput) {
     if(screen_==Screen::TransferRecovery) {
 #ifdef VPT_TRANSPORTER_WRITE
         if(transferStartup_.state==pokemon::pccs_bridge::StartupState::Completed) {
+            const int pages=std::max(1,static_cast<int>((transportResultMons_.size()+9)/10));
+            if(rawInput.pressed&kKeyL) {transportResultPage_=(transportResultPage_+pages-1)%pages;redraw_=true;return true;}
+            if(rawInput.pressed&kKeyR) {transportResultPage_=(transportResultPage_+1)%pages;redraw_=true;return true;}
             if((rawInput.pressed&(kKeyA|kKeyB|kKeyX|kKeyStart)) ||
                (rawInput.touched && touchedZone(rawInput)==kKeyA)) {
                 runTransferRecovery();redraw_=true;

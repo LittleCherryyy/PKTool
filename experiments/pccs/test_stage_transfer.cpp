@@ -91,6 +91,28 @@ int main() {
         trainer.version=41;
         std::puts("PASS: cooperative ten-Pokemon Gold/Silver to Emerald, cancel and exact stage");
     }
+    {
+        auto jp=sv::loadSaveFile(fakegb::blankGen1(true,false));
+        REQUIRE(jp&&jp->boxSlotCount()==30);
+        pk::create4::Trainer t;t.name="アッシュ";t.tid=12345;t.version=35;t.language=1;
+        std::vector<br::TransferPair> pairs;
+        for(int i=0;i<30;++i) {
+            auto mon=pk::create4::newPokemon(t,1,5,255+i);
+            mon.nickname="フシギダネ";pk::create4::encode(mon,read.data());
+            REQUIRE(jp->writeBoxSlot(0,i,read.data()));pairs.push_back({{0,i},{0,i}});
+        }
+        jp->refreshChecksums();
+        pktool::bank::Bank bank;
+        auto empty=bank.serialize();
+        auto result=br::stageGbBatch(jp->data(),empty,pairs,1);
+        if(!result.ok) std::fprintf(stderr,"Bank batch: %s\n",result.error.c_str());
+        REQUIRE(result.ok&&result.convertedBatch.size()==30);
+        REQUIRE(br::loadTransferBank(result.destinationAfter,bank)&&bank.count()==30);
+        for(int i=0;i<30;++i) REQUIRE(bank.format(0,i)==3);
+        auto src=sv::loadSaveFile(result.sourceAfter);
+        REQUIRE(src&&sv::validateSave(*src)&&src->readBoxSlot(0,0,read.data())==sv::SlotState::Empty);
+        REQUIRE(!br::stageGbBatch(jp->data(),result.destinationAfter,pairs,1).ok);
+    }
     for(auto game:{sv::Game::RubySapphire,sv::Game::Emerald,sv::Game::FireRedLeafGreen}) {
         auto dest=fake::blankGen3(game);
         auto batch=br::stageGbBatch(originalS,dest,{{{0,0},{0,3}},{{0,2},{0,8}},{{1,0},{1,0}}});

@@ -88,6 +88,25 @@ int main(){
     for(auto& file:fs::directory_iterator(root))
         if(file.path().filename().string().find("transfer.vpt.archive-")==0) ++archives;
     REQUIRE(archives==1);
+    for(auto& file:fs::directory_iterator(root)) {
+        if(file.path().filename().string().find("transfer.vpt.archive-")!=0) continue;
+        br::TransferHistory h;
+        REQUIRE(br::readTransferHistory(file.path().string(),h));
+        REQUIRE(h.pokemon.size()==1&&h.pokemon[0].species==155&&h.source==a&&h.destination==b);
+    }
+    // Bank destination uses the very same reviewed journal and recovery.
+    {
+        auto bankPath=std::string(root)+"/bank.pkb";
+        pktool::bank::Bank bank;
+        const auto initial=bank.serialize();
+        REQUIRE(put(a,sb)&&put(bankPath,initial));
+        auto reviewed=br::ReviewedTransfer::create(a,bankPath,sb,initial,{0,0},{0,0},err,notes);
+        REQUIRE(reviewed&&reviewed->persist(j).status==br::JournalStatus::Complete);
+        REQUIRE(br::resumeJournal(j,a,bankPath,br::StopPoint::DestinationWritten).status==br::JournalStatus::Interrupted);
+        REQUIRE(br::recoverActiveJournal(j).status==br::JournalStatus::Complete);
+        REQUIRE(br::archiveActiveJournal(j).status==br::JournalStatus::Complete);
+        REQUIRE(bank.load(bankPath)==pktool::bank::Bank::LoadResult::Ok&&bank.format(0,0)==3);
+    }
     std::puts("PASS: archive cleanup interruption and resume");
     std::puts("PASS: startup gate clear, partial, corrupt, pending, conflict, recovered and complete; exact reviewed bytes persisted");
     return 0;
