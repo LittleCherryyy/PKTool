@@ -1,0 +1,51 @@
+name: VPT029 individual test build
+on:
+  push:
+    branches: ['test/vpt029-individual-build']
+    paths: ['.github/workflows/vpt029-individual-build.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build pinned candidate and seal individual test copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f experiments/pccs/build_arm9_probe.sh
+          command -v openssl
+          cat >> experiments/pccs/build_arm9_probe.sh <<'SEAL'
+          test -s PKTool.nds
+          mkdir -p "$GITHUB_WORKSPACE/sealed-test"
+          out="$GITHUB_WORKSPACE/sealed-test"
+          cat > "$work/recipient.pem" <<'PUBKEY'
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAgnuvOVMjaEdvTWd1ELFp
+          3P9DSKF4ZNnQq32bK6I/beD/lAbyuU9dH1QpZIN9Gg5oRw2ut/5LegmmPCVCHwGG
+          N6wCHn5Hvkq5N6F7ENAejtNA+E3MuKfdVNxXHspuL8e03nnP0ei+lsSfwbJwCL2g
+          r8wnGAHFA9Q1G58VxxA2Ue0c+vaLhvC6jmtAqaQAmMIhf+HcZV1/QOf/PzEHZqqs
+          aD09hkllBn5edVpbpDJHoHc0xn7qKk6GFTNLijs/WOxW2Q7GxRrANM1zG/c6aXEp
+          OorOru1UxSyA+3vz/O6BlvuI0fmaZd58+5PRjGOU1eMZqylQwMCsacbN/9xbJ/x3
+          UQIDAQAB
+          -----END PUBLIC KEY-----
+          PUBKEY
+          openssl rand -hex 32 > "$work/session-key"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -pass "file:$work/session-key" -in PKTool.nds -out "$out/PKTool-VPT029.nds.enc"
+          openssl pkeyutl -encrypt -pubin -inkey "$work/recipient.pem" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in "$work/session-key" -out "$out/session-key.enc"
+          sha256sum PKTool.nds | tee "$out/SHA256SUMS.txt"
+          SEAL
+          bash experiments/pccs/build_arm9_probe.sh
+          test ! -e PKTool.nds
+          test ! -e PKTool.elf
+          test -s sealed-test/PKTool-VPT029.nds.enc
+          test -s sealed-test/session-key.enc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VPT029-individual-sealed-test
+          path: sealed-test/
+          retention-days: 1
+          if-no-files-found: error
