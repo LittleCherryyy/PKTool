@@ -18,7 +18,9 @@ jobs:
           git -C "$RUNNER_TEMP/pccs" checkout --detach 9cd6bc9bd1250013ceb1b1a70d96569985a87543
           test "$(git -C "$RUNNER_TEMP/pccs" rev-parse HEAD)" = 9cd6bc9bd1250013ceb1b1a70d96569985a87543
       - name: Build upstream host library and data tables
-        run: make -C "$RUNNER_TEMP/pccs" -j2
+        run: |
+          python3 experiments/pccs/fix_upstream_charset.py "$RUNNER_TEMP/pccs"
+          make -C "$RUNNER_TEMP/pccs" -j2
       - name: Build PKTool portable core
         run: |
           cmake -S . -B build-vpt -DCMAKE_BUILD_TYPE=Release

@@ -11,8 +11,9 @@ pin=9cd6bc9bd1250013ceb1b1a70d96569985a87543
 git clone --no-checkout https://github.com/Striaton-Lab-Team/Pokemon-Community-Conversion-Standard.git "$work/pccs"
 git -C "$work/pccs" checkout --detach "$pin"
 test "$(git -C "$work/pccs" rev-parse HEAD)" = "$pin"
+python3 experiments/pccs/fix_upstream_charset.py "$work/pccs"
 # Build uncompressed, host-generated tables; do not use PCCS's ARMv4T/GBA
-# compressed-table path on ARM9. Do not alter the conversion implementation.
+# compressed-table path on ARM9. Only the separately documented charset index fix is applied.
 make -C "$work/pccs" -j2 CXX=c++ CC=cc AR=ar
 mkdir -p "$work/arm9/lib" "$work/arm9/include" "$work/obj"
 cp "$work/pccs/include/"*.h "$work/arm9/include/"

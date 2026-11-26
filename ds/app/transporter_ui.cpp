@@ -19,6 +19,15 @@ namespace pktool::ui {
 using namespace detail;
 namespace {
 constexpr size_t kMaxSave = 160 * 1024;
+void transferBall(gfx::Canvas& c,int x,int y,int radius) {
+    c.fillCircle(x,y,radius,kText);
+    for(int dy=-radius;dy<0;++dy)
+        for(int dx=-radius;dx<=radius;++dx)
+            if(dx*dx+dy*dy<=radius*radius) c.pixel(x+dx,y+dy,kRed);
+    c.circle(x,y,radius,kPanelDark);
+    c.hline(x-radius,y,radius*2+1,kPanelDark);
+    c.fillCircle(x,y,2,kText);c.circle(x,y,2,kPanelDark);
+}
 bool readImage(const std::string& path,std::vector<uint8_t>& bytes) {
     auto size=io::fileSize(path);
     return size>0 && static_cast<size_t>(size)<=kMaxSave &&
@@ -382,7 +391,7 @@ void App::drawTransportSprite(Canvas& c,const pokemon::Pokemon& mon,int x,int y,
     const char* kind=gen==1?"transport-gb":gen==2?(mon.shiny?"transport-gbc-shiny":"transport-gbc"):(mon.shiny?"transport-gba-shiny":"transport-gba");
     auto im=sprites_.get(kind,mon.species);
     if(!im.pixels) im=sprites_.get(mon.shiny?"front-shiny":"front",mon.species);
-    if(!im.pixels) {drawBallEmblem(c,x+w/2,y+h/2,9,kRed,kText);return;}
+    if(!im.pixels) {transferBall(c,x+w/2,y+h/2,9);return;}
     const int scale=std::max(1,std::max((im.width+w-1)/w,(im.height+h-1)/h));
     const int iw=(im.width+scale-1)/scale,ih=(im.height+scale-1)/scale;
     for(int j=0;j<ih;++j) for(int i=0;i<iw;++i) {
@@ -413,7 +422,7 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
         drawTransportSprite(top,mon,23,45,58,63,transportGeneration_);
         drawTransportSprite(top,mon,175,63,58,49,3);
         const int x=90+static_cast<int>(elapsed)*75/89;
-        drawBallEmblem(top,x,84,6,kRed,kText);
+        transferBall(top,x,84,6);
         drawTransportSprite(bottom,mon,83,18,90,90,elapsed<45?transportGeneration_:3);
         bottom.text(kFontSmall,0,114,256,Align::Center,mon.nickname,kText);
     }
