@@ -197,3 +197,28 @@ as build gates. The hand-drawn console silhouettes and centre transformer
 are not cartridge screenshots or copied Nintendo console assets. In-game DSi
 appearance, exact timing at physical frame rate and the full sprite library
 are not yet independently hardware tested.
+
+## VPT033: Link visual integration / bounded sprite memory
+The edition-specific art and centre-transform timeline stay visual-only and
+never influence the PCCS converter or journal. This milestone corrects a
+sprite-cache accounting bug: evictions are decided *after* decoding the
+incoming sprite, so the full decoded cache stays <=128 KiB even at the
+unfavourable 96x96 pixel sizes. The cache retains at most 96 entries and pack
+file handles remain bounded to four. The clear operation now drops pack
+indices, closes all open NitroFS/libfat handles and resets discovery; exact
+packs can be reopened immediately afterwards without corrupted lookups.
+A packed species missing from a given pack can now use a loose PKS1 override
+from configured sprite directories. All load failures retain the existing
+legacy sprite/ordinary front-art fallback.
+
+After the user has confirmed the transfer twice and the animation ends or is
+skipped, the UI releases decoded artwork and pack handles before the reviewed
+journal images are persisted. No state needed for exact source/destination
+integrity is discarded; transaction ordering, recovery and archive checks
+remain unchanged.
+
+Tests generate synthetic 96x96 historical art and verify no loading sequence
+exceeds 128 KiB, alongside ten alternating edition packs, post-clear
+reopening and optional SD fallback. Normal host sanitizer CI, independent
+conversion/PKHeX audit and full ARM9 link are release gates. Passing them
+does not establish DSi render frame rate or physical FAT power-loss safety.
