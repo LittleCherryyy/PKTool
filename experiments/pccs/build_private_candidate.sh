@@ -52,7 +52,8 @@ git archive --format=tar "$commit" | tar -xf - -C "$work"
     CI= VPT_KEEP_LOCAL=1 bash experiments/pccs/build_arm9_probe.sh
     test -s PKTool.nds
     # A working ARM9 probe is required, not a base PKTool-only build.
-    "$DEVKITARM/bin/arm-none-eabi-nm" -C PKTool.elf | grep -Fq 'App::commitTransporter('
+    "$DEVKITARM/bin/arm-none-eabi-nm" -C PKTool.elf > "$work/candidate-symbols"
+    grep -Fq 'App::commitTransporter(' "$work/candidate-symbols"
 )
 cp "$work/PKTool.nds" "$partial"
 test -s "$partial"
