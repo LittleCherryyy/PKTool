@@ -137,3 +137,45 @@ VPT029 second locale fix: first audit rerun yielded 30 valid, 6 Japanese invalid
 
 ## VPT030: Link Cable Experience / visual edition resolution
 Separate branch from VPT029 (80fc322). A visual-only edition identity is distinct from save family, PKM origin game, and PCCS policy. For paired families the first selection confirms the edition with A; a matching local ROM header (checksum, family and region checked; only bounded header read) is a hint before filename; no inference from Pokemon origin counts. Japanese Red/Green/Blue header ambiguity requires manual choice or filename hint; Green is only offered with Japanese GB geometry. Crystal, Yellow and Emerald are unambiguous from recognized save family. Confirmation is cached by full save path/family/Japanese layout only for this session; no new catalog scan. Bank has its own model and does not invent an edition. The animation now draws distinct DMG gray, purple GBC, Indigo AGB, blue open SP and Bank pixel-art models. VPT030 retains generation-level sprite packs, existing ball movement and VPT027 timing; exact packs, transformer and animation timeline are subsequent milestones. No write or legality changes. Added standalone resolver tests and UI confirmation/cache tests; strict PCCS/PKHeX and ARM9 CI retained. No intermediate NDS delivery.
+
+## VPT031: edition-correct historical sprite packs (build candidate)
+Visual edition confirmation from VPT030 now selects the *source* art independently
+from the *destination* art. International Red/Blue intentionally share the
+pinned red-blue set, Japanese Red/Green share red-green-japan, and Ruby/Sapphire
+and FireRed/LeafGreen each share their own edition-pair art. Yellow, Gold, Silver,
+Crystal and Emerald each have distinct sets. Gen II/III get separate shiny packs;
+Gen I has no native shiny appearance. The selected edition is **visual only**,
+and cannot change PCCS conversion, PKM identity, backups or journal safeguards.
+
+The original pinned PokeAPI/sprites revision does not provide a verifiable
+Japanese Blue front-sprite sheet. The resolver deliberately uses a distinct
+`transport-blue-jp` pack name with no generated image; users may provide a
+properly sourced `transport-blue-jp.pak` themselves. It is never silently
+relabelled as Red/Green, and the in-app rendering falls back to the previous
+generation art (if present), then the ordinary front sprite. Likewise the Bank
+is not assigned an invented game-edition art pack. Missing individual species,
+including optional shiny art, degrade to the older packs/front sprites rather
+than preventing conversion or showing an unrelated edition as authentic.
+
+To produce optional exact art packs before an experimental build, from the
+repository root (requires an internet connection to the pinned PokeAPI commit):
+
+```sh
+python3 tools/build_transport_sprites.py --list
+python3 tools/build_transport_sprites.py assets/nitrofs/sprites
+```
+
+The 15 packs are included in NitroFS if generated before `make`. For a
+loader without NitroFS, copy the generated `transport-*.pak` files to
+`/PKTOOL/sprites/` on SD. The loader now searches each selected pack by kind
+across NitroFS and SD separately, with up to four open pack handles and the
+existing 128 KiB sprite cache. This prevents a long session switching game
+editions from keeping one file descriptor open per edition.
+
+Offline tests cover art IDs, the pinned source manifest, a synthetic PNG->PKS1
+round trip and pack handle eviction/SD fallback; ARM9 compilation and PCCS
+conversion remain independent gates. Historical packs are **generated at build
+time**; they are not present in a plain checkout unless generated. Animation
+cable motion/transformer, real hardware appearance, DS memory and frame-rate
+are still pending VPT032+ validation. No newly linked PCCS binary may be
+distributed until its separate license status is resolved.
