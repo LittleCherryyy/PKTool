@@ -339,6 +339,34 @@ int main() {
         press(app,ui::kKeyR);press(app,ui::kKeyB);
         REQUIRE(app.transporterRows().size()==1);
     }
+    // Native Bank source is selectable without any GB/GBC save on disk.
+    {
+        const auto root2=root+"/native-bank";
+        REQUIRE(io::makeDirectories(root2));
+        ui::Config bc=cfg;bc.scanRoot=root2;bc.dataDir=root2+"/PKTOOL";
+        const auto dir=bc.dataDir+"/bank",bp=dir+"/bank.pkb",journal=bc.dataDir+"/transporter/active.vpt";
+        const auto gba=root2+"/ruby.sav";
+        pktool::bank::Bank target;
+        tr.version=41;tr.language=2;tr.name="ASH";
+        pk::create4::encode(pk::create4::newPokemon(tr,155,5,255),raw.data());raw[1]=0;
+        REQUIRE(target.set(0,0,2,raw.data()));
+        const auto before=target.serialize();
+        REQUIRE(io::makeDirectories(dir)&&put(bp,before)&&put(gba,db));
+        ui::App app(bc);press(app,ui::kKeyY);
+        REQUIRE(app.transporterRows().empty());
+        press(app,ui::kKeySelect);REQUIRE(app.transporterRows().size()==1);
+        press(app,ui::kKeyA);REQUIRE(app.transporterRows().size()==1);
+        press(app,ui::kKeyA);REQUIRE(app.transporterRows().size()==420);
+        press(app,ui::kKeyA);press(app,ui::kKeyStart);press(app,ui::kKeyStart);
+        REQUIRE(!io::fileExists(journal)&&same(bp,before)&&same(gba,db));
+        press(app,ui::kKeyA);REQUIRE(std::string(app.screenName())=="TransferRecovery");
+        press(app,ui::kKeyA);REQUIRE(std::string(app.screenName())=="Home");
+        REQUIRE(target.load(bp)==pktool::bank::Bank::LoadResult::Ok&&target.count()==0);
+        std::vector<uint8_t> output;REQUIRE(io::readFile(gba,output));
+        auto dest=sv::loadSaveFile(output);
+        REQUIRE(dest&&sv::validateSave(*dest)&&dest->readBoxSlot(0,0,raw.data())==sv::SlotState::Valid);
+        REQUIRE(pk::pk3::toPokemon(raw.data(),80).species==155);
+    }
     // Verify the startup UI refuses a partially created journal too.
     REQUIRE(put(j+".new",{1,2,3}));
     ui::App locked(cfg);REQUIRE(std::string(locked.screenName())=="TransferRecovery");

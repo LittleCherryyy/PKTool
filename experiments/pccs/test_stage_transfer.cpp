@@ -267,7 +267,10 @@ int main() {
         pk::create4::encode(pk::create4::newPokemon(t,1,5,255),native.data());
         REQUIRE(bank.set(0,0,1,native.data()));
         t.version=g2->gameVersion();t.language=3;t.name="ÉRIC";
-        auto mon=pk::create4::newPokemon(t,155,5,255);mon.nickname="ÉCLAIR";mon.heldItem=0;
+        auto mon=pk::create4::newPokemon(t,155,5,255);
+        // GB creator defaults western games to English; a native Bank fixture
+        // must carry its actual language explicitly, unlike save-level hint.
+        mon.language=3;mon.nickname="ÉCLAIR";mon.heldItem=0;
         pk::create4::encode(mon,native.data());native[1]=0;
         REQUIRE(bank.set(0,1,2,native.data()));
         native[1]=1;REQUIRE(bank.set(0,2,2,native.data()));
@@ -276,6 +279,10 @@ int main() {
         auto refused=br::stageGbBatch(initial,originalD,{{{0,2},{0,0}}});
         REQUIRE(!refused.ok&&refused.sourceAfter.empty()&&refused.destinationAfter.empty());
         auto batch=br::stageGbBatch(initial,originalD,{{{0,0},{0,0}},{{0,1},{0,1}}});
+        if(!batch.ok) {
+            std::fprintf(stderr,"Bank source: %s\n",batch.error.c_str());
+            for(const auto& n:batch.notes) std::fprintf(stderr,"%s\n",n.c_str());
+        }
         REQUIRE(batch.ok&&batch.convertedBatch.size()==2);
         REQUIRE(pk::pk3::toPokemon(batch.convertedBatch[0].data(),80).language==2);
         REQUIRE(pk::pk3::toPokemon(batch.convertedBatch[1].data(),80).language==3);
