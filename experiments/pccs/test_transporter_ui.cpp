@@ -232,6 +232,44 @@ int main() {
         press(app,ui::kKeyY);
         REQUIRE(app.transporterRows().size()==1);
     }
+    // Capacity is displayed before opening a GBA save and an insufficient
+    // save cannot advance; exactly two free slots fit a two-Pokemon batch.
+    {
+        const auto capRoot=root+"/capacity";
+        REQUIRE(io::makeDirectories(capRoot));
+        auto gs=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Gs));
+        auto rb=sv::loadSaveFile(fake::blankGen3(sv::Game::RubySapphire));
+        REQUIRE(gs&&rb);
+        tr.version=39;
+        for(int i=0;i<2;++i) {
+            pk::create4::encode(pk::create4::newPokemon(tr,155,5,255),raw.data());raw[1]=0;
+            REQUIRE(gs->writeBoxSlot(0,i,raw.data()));
+        }
+        gs->refreshChecksums();
+        tr.version=2;
+        pk::create4::encode(pk::create4::newPokemon(tr,25,5,255),raw.data());
+        for(int i=0;i<418;++i) REQUIRE(rb->writeBoxSlot(i/30,i%30,raw.data()));
+        rb->refreshChecksums();
+        const auto source=capRoot+"/gold.sav", fit=capRoot+"/b-fit.sav", low=capRoot+"/a-low.sav";
+        REQUIRE(put(source,gs->data())&&put(fit,rb->data()));
+        REQUIRE(rb->writeBoxSlot(13,28,raw.data()));rb->refreshChecksums();
+        REQUIRE(put(low,rb->data()));
+        ui::Config cc=cfg;cc.scanRoot=capRoot;cc.dataDir=capRoot+"/PKTOOL";
+        ui::App app(cc);
+        press(app,ui::kKeyY);press(app,ui::kKeyA);
+        press(app,ui::kKeyX);press(app,ui::kKeyDown);press(app,ui::kKeyX);press(app,ui::kKeyA);
+        REQUIRE(app.transporterRows().size()==2);
+        REQUIRE(app.transporterRows()[0].find("NO SPACE | 1 free")==0);
+        REQUIRE(app.transporterRows()[1].find("READY | 2 free")==0);
+        io::resetReadStats();press(app,ui::kKeyA);
+        REQUIRE(app.transporterRows().size()==2&&io::readStats().opens==0);
+        press(app,ui::kKeyDown);press(app,ui::kKeyA);
+        REQUIRE(app.transporterRows().size()==1); // only first starting slot fits
+        press(app,ui::kKeyB);
+        REQUIRE(app.transporterRows().size()==2);
+        REQUIRE(app.transporterRows()[1].find("READY | 2 free")==0);
+        REQUIRE(!io::fileExists(cc.dataDir+"/transporter/active.vpt"));
+    }
     // Verify the startup UI refuses a partially created journal too.
     REQUIRE(put(j+".new",{1,2,3}));
     ui::App locked(cfg);REQUIRE(std::string(locked.screenName())=="TransferRecovery");

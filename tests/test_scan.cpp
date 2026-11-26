@@ -12,6 +12,9 @@
 
 #include "core/io/file_io.h"
 #include "core/saves/gen3_save.h"
+#include "core/pokemon/create4.h"
+#include "core/pokemon/entity.h"
+#include <array>
 #include "core/saves/gen4_save.h"
 #include "core/saves/gen5_save.h"
 #include "core/saves/save_probe.h"
@@ -222,4 +225,27 @@ TEST(transporter_incremental_scan_filters_ds_and_reuses_unchanged_summaries) {
     saves::IncrementalSaveScan cached(dir,3,3,found);
     while(!cached.step()) {}
     CHECK_EQ(cached.take().size(),2u);CHECK_EQ(io::readStats().opens,0u);
+}
+
+TEST(gen3_probe_counts_free_slots_without_extra_io) {
+    const auto dir=makeDir();
+    auto save=saves::loadSaveFile(fake::blankGen3(Game::Emerald));
+    CHECK(save!=nullptr);
+    pokemon::create4::Trainer t;t.name="ASH";t.tid=12345;t.version=3;t.language=2;
+    std::array<uint8_t,pokemon::entity::kMaxPartySize> raw{};
+    pokemon::create4::encode(pokemon::create4::newPokemon(t,25,5,255),raw.data());
+    const auto path=io::joinPath(dir,"emerald.sav");
+    for(int free:{420,3,0}) {
+        for(int n=0;n<420-free;++n) CHECK(save->writeBoxSlot(n/30,n%30,raw.data()));
+        save->refreshChecksums();
+        CHECK(io::safeWriteFile(path,save->data())==io::WriteResult::Ok);
+        io::resetReadStats();
+        saves::SaveSummary quick,full;
+        CHECK(saves::probeSave(path,quick));
+        CHECK_EQ(quick.freeBoxSlots,free);CHECK(quick.boxIntegrityOk);
+        CHECK_EQ(io::readStats().opens,1u);
+        CHECK(io::readStats().bytes<=60*1024);
+        CHECK(saves::probeSaveFull(path,full));
+        CHECK_EQ(full.freeBoxSlots,quick.freeBoxSlots);
+    }
 }

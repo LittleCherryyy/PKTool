@@ -41,6 +41,18 @@ uint8_t languageHint(std::string path) {
     if(path.find("(spain)")!=std::string::npos || path.find("(es)")!=std::string::npos) return 7;
     return 2;
 }
+bool destinationReady(const saves::SaveSummary& s,size_t needed) {
+    return s.boxIntegrityOk&&pokemon::pccs_bridge::supportedLanguage(s.language)&&
+           s.freeBoxSlots>=0&&static_cast<size_t>(s.freeBoxSlots)>=needed;
+}
+std::string destinationStatus(const saves::SaveSummary& s,size_t needed) {
+    if(s.freeBoxSlots<0) return "UNKNOWN";
+    if(!s.boxIntegrityOk||!pokemon::pccs_bridge::supportedLanguage(s.language)) return "INVALID";
+    return destinationReady(s,needed)?"READY":s.freeBoxSlots==0?"FULL":"NO SPACE";
+}
+std::string destinationRow(const saves::SaveSummary& s,size_t needed) {
+    return destinationStatus(s,needed)+" | "+std::to_string(std::max(0,s.freeBoxSlots))+" free | "+io::fileName(s.path);
+}
 std::string slotLabel(int box,int slot) {
     return "B"+twoDigits(box+1)+" S"+twoDigits(slot+1);
 }
@@ -210,7 +222,8 @@ void App::showTransportSaveList(bool source,const std::string& message,const std
         const auto gen=saves::gameGeneration(save.game);
         if(source?(gen==1||gen==2):gen==3) {
             transportSaves_.push_back(save);
-            transportRows_.push_back(io::fileName(save.path)+" | "+save.trainer);
+            transportRows_.push_back(source?io::fileName(save.path)+" | "+save.trainer:
+                destinationRow(save,transportSelected_.size()));
         }
     }
     transportPhase_=source?TransportPhase::Source:TransportPhase::Destination;
@@ -249,15 +262,26 @@ void App::cancelTransportBusy() {
 }
 void App::transporterSelectSave(bool source) {
     if(transportCursor_<0 || transportCursor_>=static_cast<int>(transportSaves_.size())) return;
+    if(!source&&!destinationReady(transportSaves_[transportCursor_],transportSelected_.size())) {
+        transportMessage_="Destination unavailable - choose another or Y refresh";return;
+    }
     auto path=transportSaves_[transportCursor_].path;
 #ifdef ARM9
     if(!path.empty() && path[0]=='/') path="sd:"+path;
 #endif
     std::vector<uint8_t> bytes;
-    if(!readImage(path,bytes)) { transportMessage_="Cannot read save - choose another";return; }
+    auto invalidateDestination=[&]() {
+        if(source) return;
+        auto& current=transportSaves_[transportCursor_];
+        current.boxIntegrityOk=false;
+        for(auto& save:transportCatalog_) if(save.path==current.path) save.boxIntegrityOk=false;
+        transportRows_[transportCursor_]=destinationRow(current,transportSelected_.size());
+    };
+    if(!readImage(path,bytes)) { invalidateDestination();transportMessage_="Cannot read save - choose another";return; }
     auto loaded=saves::loadSaveFile(bytes);
     if(!loaded || !saves::validateSave(*loaded) || !pokemon::pccs_bridge::supportedLanguage(loaded->language()) ||
        (source?(loaded->format()!=1 && loaded->format()!=2):loaded->format()!=3)) {
+        invalidateDestination();
         transportMessage_="Invalid or unsupported save - choose another";
         return;
     }
@@ -300,11 +324,23 @@ void App::tickTransportBoxes() {
     ++transportLoadBox_;
     if(transportLoadBox_<transportSave_->boxCount()) return;
     transportLoadBox_=-1;
+    if(!source) {
+        // Refresh the capacity from the fully validated save, not just the
+        // earlier partial probe. Keep the cached status accurate on return.
+        for(auto* list:{&transportCatalog_,&transportSaves_}) for(auto& save:*list)
+            if(save.path==transportLoadPath_||("sd:"+save.path)==transportLoadPath_) {
+                save.freeBoxSlots=static_cast<int>(transportPositions_.size());
+                save.boxIntegrityOk=true;save.language=transportSave_->language();
+            }
+    }
     if(transportRows_.empty()||(!source&&transportPositions_.size()<transportSelected_.size())) {
         const auto focus=transportLoadPath_;
         showTransportSaveList(source,source?"No boxed Pokemon - choose another save":"Not enough free slots - choose another save",focus);
         return;
     }
+    // Only starting positions with enough following empty slots can be
+    // selected. Keep the full positions vector for exact batch mapping.
+    if(!source) transportRows_.resize(transportPositions_.size()-transportSelected_.size()+1);
     transportPhase_=source?TransportPhase::SourceMon:TransportPhase::DestinationSlot;
     transportCursor_=transportScroll_=0;
     transportMessage_.clear();
@@ -374,6 +410,9 @@ void App::transporterPreview() {
 }
 void App::updateTransporter(const Input& in) {
     if((in.pressed&kKeyY)&&(transportPhase_==TransportPhase::Source||transportPhase_==TransportPhase::Destination)) {
+        // Explicit refresh also handles FAT's coarse timestamp granularity.
+        transportCatalog_.clear();
+        saveFiles_.clear();scanned_=false;
         startTransportScan(transportPhase_==TransportPhase::Source);return;
     }
     if(in.pressed&kKeyB) {
@@ -475,7 +514,11 @@ void App::updateTransporter(const Input& in) {
             showTransportSaveList(false,std::to_string(transportSelected_.size())+" Pokemon selected");
             break;
         }
-        case TransportPhase::Destination: pending_=Pending::TransferLoadDestination;break;
+        case TransportPhase::Destination:
+            if(destinationReady(transportSaves_[transportCursor_],transportSelected_.size()))
+                pending_=Pending::TransferLoadDestination;
+            else transportMessage_="Destination unavailable - choose another or Y refresh";
+            break;
         case TransportPhase::DestinationSlot: pending_=Pending::TransferPreview;break;
         case TransportPhase::Review:
             if(transportReview_ && transportAccepted_) {
@@ -589,20 +632,19 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         top.clear(rgb(32,93,108));bottom.clear(rgb(66,129,103));
         top.text(kFontLarge,4,16,248,Align::Center,"GBA PC - BOX "+twoDigits(box+1),kText);
         top.text(kFontSmall,4,40,248,Align::Center,slotLabel(box,pos.second)+" | "+std::to_string(transportSelected_.size())+" Pokemon",kText);
-        top.text(kFontSmall,4,72,248,Align::Center,"Choose the first free slot.",kText);
-        top.text(kFontSmall,4,90,248,Align::Center,"Following empty slots are filled in order.",kText);
+        top.text(kFontSmall,4,72,248,Align::Center,std::to_string(transportPositions_.size())+" free in PC",kText);
+        top.text(kFontSmall,4,90,248,Align::Center,"Green starts fit the entire batch.",kText);
         marqueeActive_ |= drawMarquee(top,8,123,240,Align::Center,transportMessage_,kText,frame_-marqueeStart_);
         for(int i=0;i<transportBoxSlots_;++i) {
             const int x=8+(i%6)*40,y=12+(i/6)*31;
             const auto sp=transportBoxSpecies_[box*transportBoxSlots_+i];
-            bottom.roundRect(x,y,38,29,i==pos.second?kYellow:kPanelDark,kPanel, i==pos.second?2:1);
+            const auto it=std::find(transportPositions_.begin(),transportPositions_.end(),std::make_pair(box,i));
+            const bool fits=it!=transportPositions_.end()&&static_cast<size_t>(it-transportPositions_.begin())<transportRows_.size();
+            bottom.roundRect(x,y,38,29,i==pos.second?kYellow:fits?kGreen:kPanelDark,kPanel, i==pos.second?2:1);
             if(sp&&sp!=0xffff) {pokemon::Pokemon mon;mon.species=sp;drawIcon(bottom,x,y,38,29,mon,false);}
             else if(sp==0xffff) bottom.text(kFontSmall,x,y+6,38,Align::Center,"!",kRed);
-            else bottom.pixel(x+19,y+14,kMuted);
-            if(!sp) {
-                const auto it=std::find(transportPositions_.begin(),transportPositions_.end(),std::make_pair(box,i));
-                if(it!=transportPositions_.end()) zones_.push_back({x,y,38,29,kZoneItem+static_cast<int>(it-transportPositions_.begin())});
-            }
+            else bottom.pixel(x+19,y+14,fits?kGreen:kMuted);
+            if(!sp&&fits) zones_.push_back({x,y,38,29,kZoneItem+static_cast<int>(it-transportPositions_.begin())});
         }
         drawHints(bottom,{{"A","Select"},{"L/R","Page"},{"B","Cancel"}},{kKeyA,0,kKeyB});
         return;
@@ -646,6 +688,42 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
     }
     drawChrome(top,"Poke Transporter", "PCCS LEGAL",kAccent);
     top.roundRect(5,kBodyTop+3,246,136,kBorder,kPanel);
+    if(transportPhase_==TransportPhase::Destination&&!transportSaves_.empty()) {
+        const auto needed=transportSelected_.size();
+        const auto& s=transportSaves_[transportCursor_];
+        const bool ready=destinationReady(s,needed);
+        const auto status=destinationStatus(s,needed);
+        const Color color=ready?kGreen:kRed;
+        drawChrome(top,"Select GBA save",status,color);
+        top.roundRect(5,35,246,137,kBorder,kPanel);
+        pokemon::Pokemon cover;cover.species=saves::coverSpecies(s.version);
+        drawTransportSprite(top,cover,8,44,76,76,3);
+        marqueeActive_|=drawMarquee(top,87,45,155,Align::Left,io::fileName(s.path),kText,frame_-marqueeStart_);
+        top.text(kFontSmall,87,65,155,Align::Left,s.trainer,kMuted);
+        top.text(kFontLarge,87,85,155,Align::Left,std::to_string(std::max(0,s.freeBoxSlots))+" free",color);
+        top.text(kFontSmall,87,106,155,Align::Left,std::to_string(needed)+" Pokemon selected",kText);
+        const auto detail=ready?"Enough space in PC":status=="INVALID"?"Save data not valid":"Not enough empty slots";
+        top.text(kFontSmall,8,131,240,Align::Center,detail,color);
+        marqueeActive_|=drawMarquee(top,8,149,240,Align::Center,transportMessage_,kMuted,frame_-marqueeStart_);
+        bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
+        if(transportCursor_<transportScroll_) transportScroll_=transportCursor_;
+        if(transportCursor_>=transportScroll_+5) transportScroll_=transportCursor_-4;
+        for(int row=0;row<5&&transportScroll_+row<static_cast<int>(transportSaves_.size());++row) {
+            const int index=transportScroll_+row,y=5+33*row;
+            const auto& item=transportSaves_[index];
+            const bool ok=destinationReady(item,needed);
+            const Color c=ok?kGreen:kRed;
+            bottom.roundRect(4,y,248,31,index==transportCursor_?kAccent:kBorder,kPanel,index==transportCursor_?2:1);
+            bottom.fillCircle(12,y+8,3,c);
+            const auto filename=io::fileName(item.path);
+            if(index==transportCursor_) marqueeActive_|=drawMarquee(bottom,21,y+2,224,Align::Left,filename,kText,frame_-marqueeStart_);
+            else bottom.text(kFontSmall,21,y+2,224,Align::Left,filename,kText);
+            bottom.text(kFontSmall,21,y+16,224,Align::Left,destinationStatus(item,needed)+" | "+std::to_string(std::max(0,item.freeBoxSlots))+" free",c);
+            zones_.push_back({4,y,248,31,kZoneItem+index});
+        }
+        drawHints(bottom,{{"A","Select"},{"Y","Refresh"},{"B","Back"}},{kKeyA,kKeyY,kKeyB});
+        return;
+    }
     const char* phase="Select GB/GBC save";
     switch(transportPhase_) {
         case TransportPhase::Source:break;

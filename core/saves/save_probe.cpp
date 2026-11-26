@@ -68,9 +68,25 @@ void summarize(const SaveFile* save, const std::string& path, SaveSummary& out) 
     out.trainer = save->trainerName();
     out.trainerId = save->trainerId();
     out.party.clear();
+    out.freeBoxSlots=-1;out.boxIntegrityOk=false;out.language=0;
+    if(save->format()==3) {
+        out.language=save->language();
+        out.freeBoxSlots=0;
+        out.boxIntegrityOk=save->checksumsValid();
+        uint8_t raw[pokemon::entity::kMaxPartySize];
+        for(int box=0;box<save->boxCount();++box) {
+            for(int slot=0;slot<save->boxSlotCount();++slot) {
+                const auto state=save->readBoxSlot(box,slot,raw);
+                if(state==SlotState::Empty) ++out.freeBoxSlots;
+                else if(state!=SlotState::Valid) out.boxIntegrityOk=false;
+            }
+        }
+    }
     uint8_t buffer[pokemon::entity::kMaxPartySize];
     for (int slot = 0; slot < save->partyCount(); ++slot) {
-        if (save->readPartySlot(slot, buffer) != SlotState::Valid) continue;
+        if (save->readPartySlot(slot, buffer) != SlotState::Valid) {
+            out.boxIntegrityOk=false;continue;
+        }
         pokemon::Pokemon p = pokemon::entity::decode(save->format(), buffer, save->partySize());
         out.party.push_back(p.isEgg ? 0 : p.species);
     }

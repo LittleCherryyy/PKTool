@@ -18,6 +18,11 @@ struct SaveSummary {
     std::string trainer;
     uint16_t trainerId = 0;
     std::vector<uint16_t> party;  // species
+    // Gen III active slot is already loaded during the probe. Capacity is
+    // informational; revalidate the complete file before any transfer.
+    int freeBoxSlots = -1;
+    bool boxIntegrityOk = false;
+    uint8_t language = 0;
     long fileSize = 0;            // file size and modification time when it was read:
     long modified = 0;            // findPokemonSaves() reuses the summary while both match
 };
