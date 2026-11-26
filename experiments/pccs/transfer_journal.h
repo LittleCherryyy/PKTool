@@ -32,7 +32,12 @@ public:
         const std::string& source,const std::string& destination,
         const std::vector<uint8_t>& expectedSource,const std::vector<uint8_t>& expectedDestination,
         BoxSlot from,BoxSlot to,std::string& error,std::vector<std::string>& notes);
+    static std::unique_ptr<ReviewedTransfer> createBatch(
+        const std::string& source,const std::string& destination,
+        const std::vector<uint8_t>& expectedSource,const std::vector<uint8_t>& expectedDestination,
+        const std::vector<TransferPair>& pairs,std::string& error,std::vector<std::string>& notes);
     const std::array<uint8_t,80>& converted() const { return staged_.converted; }
+    const std::vector<std::array<uint8_t,80>>& convertedBatch() const { return staged_.convertedBatch; }
     bool originalsMatch() const;
     JournalResult persist(const std::string& journal) const;
     ReviewedTransfer(const ReviewedTransfer&)=delete;

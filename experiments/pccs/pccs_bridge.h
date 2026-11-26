@@ -14,5 +14,6 @@ struct Preview {
 };
 // Caller must validate the actual Crystal/Ruby source and destination saves.
 // Read-only: no bank or save mutations.
+Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generation);
 Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size);
 }

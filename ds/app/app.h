@@ -188,7 +188,7 @@ private:
     std::vector<std::string> transportRows_, transportNotes_;
     std::vector<std::pair<int,int>> transportPositions_;
     int transportCursor_ = 0, transportScroll_ = 0;
-    int transportFromBox_ = 0, transportFromSlot_ = 0;
+    std::vector<std::pair<int,int>> transportSelected_;
     bool transportAccepted_ = false;
 #endif
     void updateDialog(const Input& in);

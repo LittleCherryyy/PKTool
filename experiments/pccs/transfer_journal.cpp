@@ -265,6 +265,12 @@ std::unique_ptr<ReviewedTransfer> ReviewedTransfer::create(
     const std::string& source,const std::string& destination,
     const Bytes& expectedSource,const Bytes& expectedDestination,
     BoxSlot from,BoxSlot to,std::string& error,std::vector<std::string>& notes) {
+    return createBatch(source,destination,expectedSource,expectedDestination,{{from,to}},error,notes);
+}
+std::unique_ptr<ReviewedTransfer> ReviewedTransfer::createBatch(
+    const std::string& source,const std::string& destination,
+    const Bytes& expectedSource,const Bytes& expectedDestination,
+    const std::vector<TransferPair>& pairs,std::string& error,std::vector<std::string>& notes) {
     error.clear(); notes.clear();
     auto s=normalized(source),d=normalized(destination);
     if(s.empty()) {error="Unsupported source save path";return nullptr;}
@@ -280,7 +286,7 @@ std::unique_ptr<ReviewedTransfer> ReviewedTransfer::create(
     if(!exact(s,expectedSource)||!exact(d,expectedDestination)) {
         error="Selected save changed; restart preview"; return nullptr;
     }
-    auto staged=stageCrystalToRuby(expectedSource,expectedDestination,from,to);
+    auto staged=stageGbBatch(expectedSource,expectedDestination,pairs);
     notes=staged.notes;
     if(!staged.ok) { error=staged.error;return nullptr; }
     if(!exact(s,expectedSource)||!exact(d,expectedDestination)) {

@@ -120,10 +120,11 @@ void App::openTransporter() {
     transportSourceBytes_.clear();transportDestBytes_.clear();transportReview_.reset();
     transportSource_.clear();transportDest_.clear();
     transportRows_.clear();transportNotes_.clear();transportPositions_.clear();
+    transportSelected_.clear();
     transportMessage_.clear();transportAccepted_=false;transportConfirm_=false;
     transportSaves_=saves::findPokemonSaves(config_.scanRoot,3);
     transportSaves_.erase(std::remove_if(transportSaves_.begin(),transportSaves_.end(),
-        [](const saves::SaveSummary& s){return s.game!=saves::Game::Crystal;}),
+        [](const saves::SaveSummary& s){return saves::gameGeneration(s.game)!=1 && saves::gameGeneration(s.game)!=2;}),
         transportSaves_.end());
     for(const auto& s:transportSaves_) transportRows_.push_back(io::fileName(s.path)+" | "+s.trainer);
     transportPhase_=TransportPhase::Source;
@@ -140,8 +141,8 @@ void App::transporterSelectSave(bool source) {
     if(!readImage(path,bytes)) { showMessage("Transporter","Cannot read save.");return; }
     auto loaded=saves::loadSaveFile(bytes);
     if(!loaded || !saves::validateSave(*loaded) || loaded->language()!=2 ||
-       loaded->game()!=(source?saves::Game::Crystal:saves::Game::RubySapphire)) {
-        showMessage("Transporter","Unsupported or invalid save.\nEnglish Crystal / Ruby-Sapphire only.");
+       (source?(loaded->format()!=1 && loaded->format()!=2):loaded->format()!=3)) {
+        showMessage("Transporter","Unsupported or invalid save.\nEnglish Gen I/II to Gen III only.");
         return;
     }
     if(source) {
@@ -154,8 +155,8 @@ void App::transporterSelectSave(bool source) {
             std::array<uint8_t,pokemon::entity::kMaxPartySize> raw{};
             auto state=transportSave_->readBoxSlot(b,s,raw.data());
             if(source && state==saves::SlotState::Valid) {
-                auto p=pokemon::entity::decode(2,raw.data(),transportSave_->storedSize());
-                transportRows_.push_back(slotLabel(b,s)+" "+p.nickname+" Lv"+std::to_string(p.level));
+                auto p=pokemon::entity::decode(transportSave_->format(),raw.data(),transportSave_->storedSize());
+                transportRows_.push_back("[ ] "+slotLabel(b,s)+" "+p.nickname+" Lv"+std::to_string(p.level));
                 transportPositions_.emplace_back(b,s);
             } else if(!source && state==saves::SlotState::Empty) {
                 transportRows_.push_back(slotLabel(b,s)+" Empty");
@@ -167,22 +168,33 @@ void App::transporterSelectSave(bool source) {
     transportCursor_=transportScroll_=0;
 }
 void App::transporterPreview() {
-    auto to=transportPositions_[transportCursor_];
+    namespace br=pokemon::pccs_bridge;
+    if(transportCursor_<0 || transportSelected_.empty() ||
+       static_cast<size_t>(transportCursor_)+transportSelected_.size()>transportPositions_.size()) {
+        transportMessage_="Not enough empty slots from here";return;
+    }
+    std::vector<br::TransferPair> pairs;
+    for(size_t i=0;i<transportSelected_.size();++i) {
+        auto f=transportSelected_[i], t=transportPositions_[transportCursor_+i];
+        pairs.push_back({{f.first,f.second},{t.first,t.second}});
+    }
     transportSave_.reset();sprites_.clear();
     transportNotes_.clear();transportAccepted_=false;
-    transportReview_=pokemon::pccs_bridge::ReviewedTransfer::create(
+    transportReview_=br::ReviewedTransfer::createBatch(
         transportSource_,transportDest_,transportSourceBytes_,transportDestBytes_,
-        {transportFromBox_,transportFromSlot_},{to.first,to.second},
-        transportMessage_,transportNotes_);
+        pairs,transportMessage_,transportNotes_);
     transportAccepted_=bool(transportReview_);
     if(transportReview_) {
-        transportMessage_="Conversion preview passed";
-        const auto& raw=transportReview_->converted();
-        auto p=pokemon::pk3::toPokemon(raw.data(),raw.size());
-        transportNotes_.insert(transportNotes_.begin(),p.nickname+" Lv"+std::to_string(p.level)+
-            " -> "+slotLabel(to.first,to.second));
-        transportNotes_.insert(transportNotes_.begin(),"OT: "+p.trainer.name+"  TID: "+std::to_string(p.trainer.tid));
-        transportNotes_.insert(transportNotes_.begin(),"PID: "+std::to_string(p.pid)+"  SID: "+std::to_string(p.trainer.sid));
+        transportMessage_="Preview passed: "+std::to_string(pairs.size())+" Pokemon";
+        const auto& batch=transportReview_->convertedBatch();
+        std::vector<std::string> summary;
+        for(size_t i=0;i<batch.size();++i) {
+            auto p=pokemon::pk3::toPokemon(batch[i].data(),batch[i].size());
+            summary.push_back(p.nickname+" Lv"+std::to_string(p.level)+" -> "+slotLabel(pairs[i].to.box,pairs[i].to.slot));
+            summary.push_back("OT: "+p.trainer.name+" TID: "+std::to_string(p.trainer.tid));
+            summary.push_back("PID: "+std::to_string(p.pid)+" SID: "+std::to_string(p.trainer.sid));
+        }
+        transportNotes_.insert(transportNotes_.begin(),summary.begin(),summary.end());
     }
     std::vector<uint8_t>().swap(transportSourceBytes_);
     std::vector<uint8_t>().swap(transportDestBytes_);
@@ -223,16 +235,27 @@ void App::updateTransporter(const Input& in) {
         activate=transportCursor_==zone-kZoneItem;
         transportCursor_=zone-kZoneItem;
     }
+    if(transportPhase_==TransportPhase::SourceMon && (in.pressed&kKeyX) && count>0) {
+        auto p=transportPositions_[transportCursor_];
+        auto found=std::find(transportSelected_.begin(),transportSelected_.end(),p);
+        if(found!=transportSelected_.end()) {
+            transportSelected_.erase(found);transportRows_[transportCursor_][1]=' ';
+        } else if(transportSelected_.size()<pokemon::pccs_bridge::kMaxBatch) {
+            transportSelected_.push_back(p);transportRows_[transportCursor_][1]='X';
+        }
+        transportMessage_=std::to_string(transportSelected_.size())+" selected (max 10)";
+        return;
+    }
     if(!activate || count==0) return;
     switch(transportPhase_) {
         case TransportPhase::Source: transporterSelectSave(true);break;
         case TransportPhase::SourceMon: {
-            auto p=transportPositions_[transportCursor_];
-            transportFromBox_=p.first;transportFromSlot_=p.second;
+            if(transportSelected_.empty()) transportSelected_.push_back(transportPositions_[transportCursor_]);
+            transportMessage_=std::to_string(transportSelected_.size())+" Pokemon selected";
             transportSave_.reset();
             transportSaves_=saves::findPokemonSaves(config_.scanRoot,3);
             transportSaves_.erase(std::remove_if(transportSaves_.begin(),transportSaves_.end(),
-                [](const saves::SaveSummary& s){return s.game!=saves::Game::RubySapphire;}),
+                [](const saves::SaveSummary& s){return saves::gameGeneration(s.game)!=3;}),
                 transportSaves_.end());
             transportRows_.clear();
             for(const auto& s:transportSaves_) transportRows_.push_back(io::fileName(s.path)+" | "+s.trainer);
@@ -257,16 +280,16 @@ void App::updateTransporter(const Input& in) {
 void App::drawTransporter(Canvas& top,Canvas& bottom) {
     drawChrome(top,"Poke Transporter", "PCCS LEGAL",kAccent);
     top.roundRect(5,kBodyTop+3,246,136,kBorder,kPanel);
-    const char* phase="Select Crystal save";
+    const char* phase="Select GB/GBC save";
     switch(transportPhase_) {
         case TransportPhase::Source:break;
         case TransportPhase::SourceMon:phase="Select boxed Pokemon";break;
-        case TransportPhase::Destination:phase="Select Ruby/Sapphire save";break;
-        case TransportPhase::DestinationSlot:phase="Select empty destination slot";break;
+        case TransportPhase::Destination:phase="Select GBA save";break;
+        case TransportPhase::DestinationSlot:phase="Select first empty slot";break;
         case TransportPhase::Review:phase=transportAccepted_?"Preview accepted":"Preview refused";break;
     }
     top.text(kFontLarge,9,45,238,Align::Center,phase,kText);
-    top.text(kFontSmall,9,66,238,Align::Center,"Gen II -> Gen III | English only",kMuted);
+    top.text(kFontSmall,9,66,238,Align::Center,"Gen I/II -> Gen III | English",kMuted);
     marqueeActive_ |= drawMarquee(top,9,84,238,Align::Left,"From: "+transportSource_,kText,frame_-marqueeStart_);
     marqueeActive_ |= drawMarquee(top,9,99,238,Align::Left,"To: "+transportDest_,kText,frame_-marqueeStart_);
     marqueeActive_ |= drawMarquee(top,9,116,238,Align::Center,transportMessage_,
@@ -287,6 +310,8 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
 #endif
         drawHints(bottom,{{"A","Recheck"},{"B","Home"}},{kKeyA,kKeyB});
     }
+    else if(transportPhase_==TransportPhase::SourceMon)
+        drawHints(bottom,{{"X","Mark"},{"A","Next"},{"B","Cancel"}},{kKeyX,kKeyA,kKeyB});
     else drawHints(bottom,{{"A","Select"},{"+","Move"},{"B","Cancel"}},{kKeyA,0,kKeyB});
 }
 }

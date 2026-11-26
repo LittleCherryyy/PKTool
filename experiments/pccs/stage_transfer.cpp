@@ -78,16 +78,16 @@ StagedTransfer stageCrystalToRuby(const std::vector<uint8_t>& source,
     auto d=saves::loadSaveFile(destination);
     if (!s || !d || !saves::validateSave(*s) || !saves::validateSave(*d))
         return fail("Invalid save or checksum");
-    if (s->game()!=Game::Crystal || d->game()!=Game::RubySapphire ||
+    if ((s->format()!=1 && s->format()!=2) || d->format()!=3 ||
         s->language()!=2 || d->language()!=2)
-        return fail("Only English Crystal and Ruby/Sapphire save format supported");
+        return fail("Only English Gen I/II to Gen III saves supported");
     if (!inBounds(*s,from) || !inBounds(*d,to)) return fail("Invalid box slot");
     Blob selected{}, existing{};
     if (s->readBoxSlot(from.box,from.slot,selected.data())!=SlotState::Valid)
         return fail("Source slot is not valid");
     if (d->readBoxSlot(to.box,to.slot,existing.data())!=SlotState::Empty)
         return fail("Destination slot is not empty");
-    auto preview=previewCrystalToRuby(selected.data(),pk2::kEntitySize);
+    auto preview=previewGbToGba(selected.data(),s->storedSize(),s->format());
     result.notes=preview.notes;
     if (!preview.ok) { result.error=preview.error; return result; }
     // Keep original images immutable and mutate independent staged copies.
@@ -108,6 +108,46 @@ StagedTransfer stageCrystalToRuby(const std::vector<uint8_t>& source,
     result.sourceAfter=sr->data();
     result.destinationAfter=dr->data();
     result.converted=preview.data;
+    result.convertedBatch.push_back(preview.data);
+    result.ok=true;
+    return result;
+}
+StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,
+                            const std::vector<uint8_t>& destination,
+                            const std::vector<TransferPair>& pairs) {
+    StagedTransfer result;
+    if (pairs.empty() || pairs.size()>kMaxBatch) {result.error="Select 1-10 Pokemon";return result;}
+    for (size_t i=0;i<pairs.size();++i) for(size_t j=0;j<i;++j) {
+        auto a=pairs[i],b=pairs[j];
+        if ((a.from.box==b.from.box && a.from.slot==b.from.slot) ||
+            (a.to.box==b.to.box && a.to.slot==b.to.slot)) {
+            result.error="Duplicate source or destination slot";return result;
+        }
+    }
+    if(pairs.size()==1) return stageCrystalToRuby(source,destination,pairs[0].from,pairs[0].to);
+    // GB boxes compact on removal: process highest original slot first.
+    // Destination mapping and display remain in the user's selection order.
+    std::vector<size_t> order;
+    for(size_t i=0;i<pairs.size();++i) order.push_back(i);
+    std::sort(order.begin(),order.end(),[&](size_t i,size_t j) {
+        auto a=pairs[i].from,b=pairs[j].from;
+        return a.box!=b.box ? a.box>b.box : a.slot>b.slot;
+    });
+    std::vector<uint8_t> sb,db;
+    std::vector<std::array<uint8_t,80>> converted(pairs.size());
+    for(size_t i:order) {
+        auto p=pairs[i];
+        auto staged=stageCrystalToRuby(sb.empty()?source:sb,db.empty()?destination:db,p.from,p.to);
+        const auto prefix="Pokemon "+std::to_string(i+1)+": ";
+        if(!staged.ok) {
+            result.error=prefix+staged.error;result.notes=std::move(staged.notes);return result;
+        }
+        for(auto& note:staged.notes) result.notes.push_back(prefix+note);
+        converted[i]=staged.converted;
+        sb=std::move(staged.sourceAfter);db=std::move(staged.destinationAfter);
+    }
+    result.sourceAfter=std::move(sb);result.destinationAfter=std::move(db);
+    result.converted=converted.front();result.convertedBatch=std::move(converted);
     result.ok=true;
     return result;
 }

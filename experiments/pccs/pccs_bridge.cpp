@@ -3,6 +3,9 @@
 #include "pccs_preflight.h"
 #include "pccs_policy.h"
 #include "core/pokemon/pk2.h"
+#include "core/pokemon/pk1.h"
+#include "core/pokemon/gb_common.h"
+#include <Gen1Pokemon.h>
 #include "core/pokemon/pk3.h"
 #include "core/legality/legality.h"
 // External PCCS headers from pinned upstream; not bundled.
@@ -13,9 +16,18 @@ static_assert(pk2::kEntitySize == 72 && pk2::kOtOffset == 48 &&
               pk2::kNicknameOffset == 59 && pk2::kLanguageOffset == 70 &&
               pk2::kEggOffset == 71 && pk2::offset::kLevel == 31);
 static_assert(pk3::kStoredSize == 80);
-Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
+Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generation) {
     Preview result;
-    switch (preflight(entity, size)) {
+    if (generation != 1 && generation != 2) { result.error="Unsupported source generation"; return result; }
+    if (generation == 1) {
+        if (!entity || size != pk1::kEntitySize) { result.error="Invalid PK1 size"; return result; }
+        if (entity[pk1::kLanguageOffset] != 2) { result.error="English saves only"; return result; }
+        if (entity[0] >= 191 || !data::speciesFromGen1(entity[0]) ||
+            data::speciesFromGen1(entity[0]) > 150) { result.error="Unsupported Gen I species or mythical"; return result; }
+        if (!entity[pk1::offset::kBoxLevel] || entity[pk1::offset::kBoxLevel] > 100) {
+            result.error="Invalid source level"; return result;
+        }
+    } else switch (preflight(entity, size)) {
     case Preflight::Ready: break;
     case Preflight::InvalidSize: result.error = "Invalid PK2 entity size"; return result;
     case Preflight::UnsupportedLanguage: result.error = "English saves only in VPT001"; return result;
@@ -25,8 +37,8 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
     case Preflight::Mythical: result.error = "Mythical event conversion is not validated"; return result;
     case Preflight::InvalidLevel: result.error = "Invalid source level"; return result;
     }
-    const auto original = pk2::toPokemon(entity, size);
-    const auto sourceReport = pktool::legality::checkGen2(original);
+    auto original = generation==1 ? pk1::toPokemon(entity,size) : pk2::toPokemon(entity,size);
+    const auto sourceReport = generation==1 ? legality::checkGen1(original) : legality::checkGen2(original);
     if (sourceReport.overall() != pktool::legality::Severity::Valid) {
         result.notes.push_back("Species: "+std::to_string(original.species)+" Lv"+std::to_string(original.level));
         result.notes.push_back("Met: "+std::to_string(original.met.metLocation)+" Lv"+std::to_string(original.met.metLevel)+" time "+std::to_string(original.met.encounterType));
@@ -39,11 +51,25 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
         return result;
     }
     ::PokemonTables table;
-    ::Gen2Pokemon source(::ENGLISH);
-    source.loadData(::ENGLISH, entity, entity + pk2::kNicknameOffset,
-                    entity + pk2::kOtOffset, entity[pk2::offset::kSpecies]);
     ::Gen3Pokemon converted;
-    if (!source.convertToGen3(&table, &converted, ::LEGAL, false)) {
+    const auto otOffset = generation==1 ? pk1::kOtOffset : pk2::kOtOffset;
+    const auto nickOffset = generation==1 ? pk1::kNicknameOffset : pk2::kNicknameOffset;
+    bool convertedOk = false;
+    if (generation==1) {
+        // Gen I has no displayed gender/shiny flag; derive the expected
+        // Gen II traits from its original DVs before checking the PK3.
+        original.gender = gb::genderFromDvs(original.species,original.ivs);
+        original.shiny = gb::isShinyDvs(original.ivs);
+        ::Gen1Pokemon source(::ENGLISH);
+        source.loadData(::ENGLISH,entity,entity+nickOffset,entity+otOffset,entity[0]);
+        convertedOk = source.convertToGen3(&table,&converted,::LEGAL,false);
+        result.notes.push_back("Gen I: gender and shiny derived from original DVs");
+    } else {
+        ::Gen2Pokemon source(::ENGLISH);
+        source.loadData(::ENGLISH,entity,entity+nickOffset,entity+otOffset,entity[0]);
+        convertedOk = source.convertToGen3(&table,&converted,::LEGAL,false);
+    }
+    if (!convertedOk) {
         result.error = "PCCS LEGAL conversion refused";
         return result;
     }
@@ -68,10 +94,10 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
     const auto target = pk3::toPokemon(bytes.data(), bytes.size());
     // The GB codec displays the in-game trade OT control code as "*".
     // PCCS expands the exact two-byte English token to the displayed TRAINER.
-    const bool tradeOt = entity[pk2::kOtOffset] == 0x5D &&
-                         entity[pk2::kOtOffset + 1] == 0x50;
+    const bool tradeOt = entity[otOffset] == 0x5D &&
+                         entity[otOffset + 1] == 0x50;
     if (!checkProtectedIdentity(original, target, tradeOt, result.notes,
-                                entity + pk2::kOtOffset, entity + pk2::kNicknameOffset)) {
+                                entity + otOffset, entity + nickOffset)) {
         result.error = "Conversion changes protected identity fields";
         return result;
     }
@@ -88,5 +114,8 @@ Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
     result.notes.push_back("PCCS LEGAL: unofficial conversion; not an official Nintendo transfer");
     result.ok = true;
     return result;
+}
+Preview previewCrystalToRuby(const uint8_t* entity, std::size_t size) {
+    return previewGbToGba(entity,size,2);
 }
 }
