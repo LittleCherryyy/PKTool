@@ -127,7 +127,13 @@ int main() {
             REQUIRE(same(ga,bs)&&same(eb,bd)&&!io::fileExists(bj));
             press(app,ui::kKeyStart);
             REQUIRE(!io::fileExists(bj)&&same(ga,bs)&&same(eb,bd));
-            press(app,ui::kKeyA);
+            // Two Pokemon now have 480 frames of animation plus 60 final
+            // frames. Verify the sequence stays read-only well beyond the old
+            // 90-frame timeout, then naturally commits without a skip.
+            for(int f=0;f<300;++f) app.update({});
+            REQUIRE(std::string(app.screenName())=="Transporter");
+            REQUIRE(!io::fileExists(bj)&&same(ga,bs)&&same(eb,bd));
+            for(int f=0;f<260;++f) app.update({});
             REQUIRE(std::string(app.screenName())=="TransferRecovery");
             REQUIRE(br::inspectActiveJournal(bj).state==br::StartupState::Completed);
             REQUIRE(!same(ga,bs)&&!same(eb,bd));

@@ -565,13 +565,14 @@ void App::updateTransporter(const Input& in) {
             break; // No journal persistence in the preview build.
     }
 }
-void App::drawTransportSprite(Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t gen) {
+void App::drawTransportSprite(Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t gen,bool enlarge) {
     const char* kind=gen==1?"transport-gb":gen==2?(mon.shiny?"transport-gbc-shiny":"transport-gbc"):(mon.shiny?"transport-gba-shiny":"transport-gba");
     auto im=sprites_.get(kind,mon.species);
     if(!im.pixels) im=sprites_.get(mon.shiny?"front-shiny":"front",mon.species);
     if(!im.pixels) {transferBall(c,x+w/2,y+h/2,9);return;}
     const int scale=std::max(1,std::max((im.width+w-1)/w,(im.height+h-1)/h));
     const int iw=(im.width+scale-1)/scale,ih=(im.height+scale-1)/scale;
+    const int zoom=enlarge?std::max(1,std::min(2,std::min(w/iw,h/ih))):1;
     for(int j=0;j<ih;++j) for(int i=0;i<iw;++i) {
         auto px=im.pixels[(j*scale)*im.width+i*scale];
         if(!(px&0x8000)) continue;
@@ -579,37 +580,84 @@ void App::drawTransportSprite(Canvas& c,const pokemon::Pokemon& mon,int x,int y,
             const int l=((px&31)*3+((px>>5)&31)*6+((px>>10)&31))/10;
             px=l<8?rgb(30,54,35):l<16?rgb(75,105,55):l<24?rgb(131,157,82):rgb(199,220,145);
         }
-        c.pixel(x+(w-iw)/2+i,y+(h-ih)/2+j,px);
+        const int dx=x+(w-iw*zoom)/2+i*zoom,dy=y+(h-ih*zoom)/2+j*zoom;
+        if(zoom==1) c.pixel(dx,dy,px);
+        else c.fillRect(dx,dy,zoom,zoom,px);
     }
 }
 void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
-    const auto elapsed=std::min<uint32_t>(89,frame_-transportAnimationStart_);
+    const uint32_t duration=transportAnimationDuration();
+    const uint32_t elapsed=std::min(duration-1,frame_-transportAnimationStart_);
+    const size_t count=transportResultMons_.size();
+    const bool finale=elapsed>=count*kLinkFramesPerPokemon;
+    const size_t idx=count?std::min(count-1,static_cast<size_t>(elapsed/kLinkFramesPerPokemon)):0;
+    const uint32_t phase=finale?239:elapsed%kLinkFramesPerPokemon;
+    const bool departure=phase<60,travel=phase>=60&&phase<150,change=phase>=150&&phase<180;
+    const bool arrival=phase>=180;
+    const char* stage=finale?"LINK SEQUENCE COMPLETE":departure?"READY TO DEPART":travel?"CROSSING THE LINK":change?"CONVERTING TO GBA":"ARRIVING ON GBA";
+    const Color gb=transportGeneration_==1?rgb(181,202,133):rgb(220,235,208);
+    const Color gba=rgb(205,229,210),ink=rgb(30,54,35);
     top.clear(kBackground);bottom.clear(kBackground);
-    top.text(kFontLarge,0,12,256,Align::Center,"LINK TRANSPORT",kText);
-    top.roundRect(14,36,76,115,kBorder,rgb(139,149,142),2);
-    top.roundRect(166,54,76,79,kBorder,rgb(83,92,165),2);
-    top.fillRect(23,45,58,63,rgb(181,202,133));
-    top.fillRect(175,63,58,49,rgb(205,229,210));
-    top.hline(90,84,76,kAccent);
-    top.vline(90,84,17,kAccent);top.vline(165,84,17,kAccent);
-    top.fillRect(41,119,19,5,kPanelDark);top.fillRect(48,112,5,19,kPanelDark);
-    top.fillCircle(72,125,5,kRed);
-    const auto idx=transportResultMons_.empty()?0:std::min<size_t>(transportResultMons_.size()-1,elapsed*transportResultMons_.size()/90);
-    if(!transportResultMons_.empty()) {
+    top.text(kFontLarge,0,8,256,Align::Center,stage,kText);
+    // Two recognizable consoles, linked by a visible cable with a moving ball.
+    top.roundRect(9,32,83,120,kBorder,transportGeneration_==1?rgb(170,174,160):rgb(105,91,165),2);
+    top.roundRect(17,39,67,69,kPanelDark,kPanelDark);
+    top.fillRect(21,43,59,61,gb);
+    top.fillRect(26,123,21,5,kPanelDark);top.fillRect(34,115,5,21,kPanelDark);
+    top.fillCircle(71,119,5,kRed);top.fillCircle(62,130,5,kRed);
+    top.roundRect(164,53,87,80,kBorder,rgb(83,92,165),2);
+    top.roundRect(173,59,69,57,kPanelDark,kPanelDark);
+    top.fillRect(176,62,63,51,gba);
+    top.fillRect(169,120,15,3,kPanelDark);top.fillRect(175,115,3,13,kPanelDark);
+    top.fillCircle(244,119,3,kRed);
+    top.fillRect(92,83,72,5,kPanelDark);top.hline(92,85,72,kMuted);
+    top.fillRect(90,79,5,13,kMuted);top.fillRect(161,79,5,13,kMuted);
+    if(count) {
         const auto& mon=transportResultMons_[idx];
-        drawTransportSprite(top,mon,23,45,58,63,transportGeneration_);
-        drawTransportSprite(top,mon,175,63,58,49,3);
-        const int x=90+static_cast<int>(elapsed)*75/89;
-        transferBall(top,x,84,6);
-        drawTransportSprite(bottom,mon,83,18,90,90,elapsed<45?transportGeneration_:3);
-        bottom.text(kFontSmall,0,114,256,Align::Center,mon.nickname,kText);
+        const auto& original=idx<transportEntries_.size()?transportEntries_[idx].mon:mon;
+        if(departure) drawTransportSprite(top,original,21,43,59,61,transportGeneration_);
+        else if(arrival) drawTransportSprite(top,mon,176,62,63,51,3);
+        if(travel) {
+            const int x=94+static_cast<int>((phase-60)*68/89);
+            top.hline(94,85,x-93,kAccent);
+            transferBall(top,x,85,8);
+        } else if(change) {
+            const int radius=5+static_cast<int>((phase-150)/5);
+            top.circle(207,87,radius+5,kYellow);
+            transferBall(top,207,87,radius);
+        }
+        if(departure) top.brackets(18,40,65,67,kYellow,6);
+        if(arrival) top.brackets(174,60,67,55,kGreen,6);
+        top.text(kFontSmall,9,159,83,Align::Center,transportGeneration_==1?"GAME BOY":"GAME BOY COLOR",kMuted);
+        top.text(kFontSmall,164,144,87,Align::Center,"GAME BOY ADVANCE",kMuted);
+        top.text(kFontSmall,0,175,256,Align::Center,finale?"Ready to write both saves":std::to_string(idx+1)+" / "+std::to_string(count)+" Pokemon",kAccent);
+
+        // Lower screen focuses on one Pokemon at a time, with a larger
+        // nearest-neighbour sprite and a deliberate reveal of the GBA art.
+        bottom.roundRect(8,5,240,122,kBorder,arrival?gba:gb,2);
+        if(travel) {
+            const int x=30+static_cast<int>((phase-60)*196/89);
+            bottom.hline(20,63,216,ink);
+            for(int i=0;i<4;++i) bottom.circle(x-6*i,63,3,ink);
+            transferBall(bottom,x,63,13);
+        } else if(change) {
+            const int t=static_cast<int>(phase-150);
+            drawTransportSprite(bottom,t<15?original:mon,54,10,148,112,t<15?transportGeneration_:3,true);
+            // One smooth, short transition (not repeated flashing).
+            const int alpha=std::max(0,20-std::abs(t-15)*2);
+            bottom.blendRect(10,7,236,118,rgb(255,255,255),alpha);
+        } else {
+            drawTransportSprite(bottom,arrival?mon:original,54,10,148,112,arrival?3:transportGeneration_,true);
+        }
+        bottom.text(kFontLarge,8,130,240,Align::Center,finale?"All Pokemon prepared":arrival?mon.nickname:original.nickname,kText);
+        const std::string detail=finale?"Saving begins after the animation":departure?"Original sprite":travel?"Link cable connected":change?"GB / GBC to GBA":"GBA sprite ready";
+        bottom.text(kFontSmall,8,146,240,Align::Center,detail,kMuted);
     }
-    top.text(kFontSmall,14,157,76,Align::Center,"GB / GBC",kMuted);
-    top.text(kFontSmall,166,157,76,Align::Center,"GBA",kMuted);
-    bottom.rect(23,134,210,9,kBorder);
-    bottom.fillRect(25,136,static_cast<int>(elapsed)*206/89,5,kAccent);
-    bottom.text(kFontSmall,0,151,256,Align::Center,"Preparing link - A / START skip",kMuted);
+    bottom.rect(13,161,230,8,kBorder);
+    bottom.fillRect(15,163,static_cast<int>(226*elapsed/(duration-1)),4,kAccent);
+    bottom.text(kFontSmall,0,178,256,Align::Center,"A / START: Skip animation",kMuted);
 }
+
 void App::drawTransporter(Canvas& top,Canvas& bottom) {
     if(transportAnimating_) {drawTransportAnimation(top,bottom);return;}
     if(transportBatch_) {

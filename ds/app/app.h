@@ -216,11 +216,16 @@ private:
     uint8_t transportLanguage_=2, transportGeneration_=2;
     bool transportAnimating_=false;
     uint32_t transportAnimationStart_=0;
+    static constexpr uint32_t kLinkFramesPerPokemon=240;
+    static constexpr uint32_t kLinkFinalFrames=60;
+    uint32_t transportAnimationDuration() const {
+        return kLinkFramesPerPokemon*static_cast<uint32_t>(transportResultMons_.size())+kLinkFinalFrames;
+    }
     std::vector<pokemon::Pokemon> transportMons_,transportResultMons_;
     std::vector<uint16_t> transportBoxSpecies_;
     int transportBoxSlots_=0;
     void refreshTransportNames();
-    void drawTransportSprite(gfx::Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t generation);
+    void drawTransportSprite(gfx::Canvas& c,const pokemon::Pokemon& mon,int x,int y,int w,int h,uint8_t generation,bool enlarge=false);
     void drawTransportAnimation(gfx::Canvas& top,gfx::Canvas& bottom);
 #endif
     void updateDialog(const Input& in);
