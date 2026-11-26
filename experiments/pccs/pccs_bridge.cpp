@@ -8,6 +8,9 @@
 #include <Gen1Pokemon.h>
 #include <memory>
 #include "core/pokemon/pk3.h"
+#include "core/text/gen4_text.h"
+#include "core/text/gen12_text.h"
+#include <algorithm>
 #include "core/legality/legality.h"
 // External PCCS headers from pinned upstream; not bundled.
 #include <Gen2Pokemon.h>
@@ -91,6 +94,49 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
     // before serialization, following upstream examples/convertPKs/main.cpp.
     converted.setChecksum(converted.calculateChecksum());
     auto bytes = converted.outputByteArray(false, true); // canonical GAEM
+    // PCCS Gen I FR/DE charset differs from the actual GB character map.
+    // Correct only exact, independently decoded names; do not transliterate
+    // unknown glyphs, truncate, alter trade OT tokens or relax identity.
+    const bool tradeToken=entity[otOffset]==0x5D&&entity[otOffset+1]==0x50;
+    const auto rewriteName=[&](size_t sourceOffset,size_t targetOffset,size_t max,size_t width,
+                               const std::string& expected) {
+        const auto* raw=entity+sourceOffset;
+        for(size_t i=0;i<=max;++i) {
+            if(raw[i]==0x50) break;
+            if(data::charGb(generation,original.language,raw[i])==0xffff) return false;
+        }
+        std::array<uint8_t,10> encoded{};
+        encoded.fill(text::kGen3Terminator);
+        text::encodeGen3(expected,encoded.data(),width,max,original.language);
+        if(text::decodeGen3(encoded.data(),width,original.language)!=expected) return false;
+        std::copy_n(encoded.begin(),width,bytes.begin()+targetOffset);
+        return true;
+    };
+    if(generation==1&&(original.language==3||original.language==5)) {
+        if(!tradeToken&&text::decodeGen3(bytes.data()+pk3::offset::kOtName,7,original.language)!=original.trainer.name) {
+            if(!rewriteName(otOffset,pk3::offset::kOtName,7,7,original.trainer.name)) {
+                result.error="Cannot preserve localized OT";return result;
+            }
+            result.notes.push_back("Gen I localized OT encoded without changing identity");
+        }
+        if(text::decodeGen3(bytes.data()+pk3::offset::kNickname,10,original.language)!=original.nickname) {
+            if(!rewriteName(nickOffset,pk3::offset::kNickname,10,10,original.nickname)) {
+                result.error="Cannot preserve localized nickname";return result;
+            }
+            result.notes.push_back("Gen I localized nickname encoded without changing identity");
+        }
+    }
+    if(original.language==1) {
+        // Japanese logical names are at most five characters. Keep their
+        // exact text and ensure physical PK3 fields end with FF padding.
+        if(!tradeToken&&!rewriteName(otOffset,pk3::offset::kOtName,5,7,original.trainer.name)) {
+            result.error="Cannot preserve Japanese OT";return result;
+        }
+        if(!rewriteName(nickOffset,pk3::offset::kNickname,5,10,original.nickname)) {
+            result.error="Cannot preserve Japanese nickname";return result;
+        }
+        result.notes.push_back("Japanese PK3 names use explicit terminator padding");
+    }
     // Independent PKTool at-rest encoding/decoding must round-trip.
     auto roundtrip = bytes;
     pk3::encrypt(roundtrip.data());

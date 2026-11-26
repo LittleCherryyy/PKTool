@@ -24,6 +24,7 @@ foreach (string path in Directory.EnumerateFiles(args[0]).OrderBy(p => p))
         else illegal++;
         Console.WriteLine($"Species={pk.Species} Language={pk.Language} Parsed={la.Parsed} Valid={la.Valid}");
         Console.WriteLine(la.Report(verbose: true));
+        Console.WriteLine($"OT bytes={Convert.ToHexString(pk.OriginalTrainerTrash)} Nickname bytes={Convert.ToHexString(pk.NicknameTrash)}");
     }
     catch (Exception ex)
     {
@@ -32,6 +33,6 @@ foreach (string path in Directory.EnumerateFiles(args[0]).OrderBy(p => p))
     }
 }
 Console.WriteLine($"PKHeX audit: valid={legal}, invalid={illegal}, conversion refused={refused}, errors={errors}");
-if (legal + illegal + refused + errors != 36 || errors != 0) return 1;
-// A report, not a claim of official provenance or blanket legality.
+if (legal != 36 || illegal != 0 || refused != 0 || errors != 0) return 1;
+// This gate applies only to this regression corpus, not all possible Pokemon.
 return 0;
