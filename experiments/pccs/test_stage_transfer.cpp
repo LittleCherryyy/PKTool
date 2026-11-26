@@ -101,7 +101,7 @@ int main() {
         int pocket=-1;const uint16_t item=0x12; // Potion
         for(int p=0;p<4;++p) if(bagSave->pocketAllows(p,item)) {pocket=p;break;}
         REQUIRE(pocket>=0&&bagSave->setPocket(pocket,{{item,5}}));
-        trainer.version=setup.japanese?41:39;trainer.language=setup.japanese?1:2;
+        trainer.version=bagSave->gameVersion();trainer.language=setup.japanese?1:2;
         trainer.name=setup.japanese?"アッシュ":"ASH";
         auto mon=pk::create4::newPokemon(trainer,155,5,255);
         if(setup.japanese) mon.nickname="ヒノアラシ";

@@ -144,7 +144,7 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
         const auto prefix=pairs.size()==1?std::string():"Pokemon "+std::to_string(i+1)+": ";
         EntryReview entry;
         Blob selected{},existing{};
-        int pocket=-1;Pocket updated;
+        int pocket=-1;Pocket updated;uint16_t heldItem=0;
         if(!inBounds(*s,p.from)||s->readBoxSlot(p.from.box,p.from.slot,selected.data())!=SlotState::Valid)
             entry.error="Source slot is not valid";
         else {
@@ -153,7 +153,7 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
             if(!inBounds(*d,p.to)||d->readBoxSlot(p.to.box,p.to.slot,existing.data())!=SlotState::Empty)
                 entry.error="Destination slot is not empty";
             else if(s->format()==2 && selected[pk2::offset::kHeldItem]) {
-                const auto item=selected[pk2::offset::kHeldItem];
+                const auto item=selected[pk2::offset::kHeldItem];heldItem=item;
                 entry.itemName=s->itemName(item);
                 if(planItemReturn(*s,item,plannedBag,pocket,updated,entry.error))
                     selected[pk2::offset::kHeldItem]=0;
@@ -166,7 +166,7 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
                     entry.ready=true;
                     if(pocket>=0) {
                         plannedBag[pocket]=std::move(updated);changedBag[pocket]=true;
-                        entry.returnedItem=entry.mon.heldItem;
+                        entry.returnedItem=heldItem;
                         entry.notes.insert(entry.notes.begin(),"Return to source Bag: "+entry.itemName+" x1");
                     }
                     converted.push_back(preview.data);

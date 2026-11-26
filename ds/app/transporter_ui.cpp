@@ -535,7 +535,9 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
             if(r.mon.species) drawIcon(bottom,7,y,35,28,r.mon,false);
             bottom.text(kFontSmall,45,y+3,135,Align::Left,r.mon.nickname,kText);
             bottom.text(kFontSmall,180,y+3,66,Align::Right,r.ready?(r.returnedItem?"BAG":"OK"):"BLOCK",color);
-            marqueeActive_ |= index==transportCursor_?drawMarquee(bottom,45,y+15,199,Align::Left,r.ready?(r.returnedItem?r.itemName+" -> Bag":"Ready to move"):r.error,color,frame_-marqueeStart_):false;
+            const auto detail=r.ready?(r.returnedItem?r.itemName+" -> Bag":"Ready to move"):r.error;
+            if(index==transportCursor_) marqueeActive_ |= drawMarquee(bottom,45,y+15,199,Align::Left,detail,color,frame_-marqueeStart_);
+            else bottom.text(kFontSmall,45,y+15,199,Align::Left,detail,color);
             zones_.push_back({4,y,248,28,kZoneItem+index});
         }
 #ifdef VPT_TRANSPORTER_WRITE
