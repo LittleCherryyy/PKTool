@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "stage_transfer.h"
 #include "pccs_policy.h"
-#include "core/pokemon/pk2.h"
 #include "core/pokemon/pk3.h"
 #include "core/saves/save_commit.h"
 #include "core/saves/save_file.h"
@@ -11,144 +10,132 @@ namespace pktool::pokemon::pccs_bridge {
 namespace {
 using saves::SaveFile;
 using saves::SlotState;
-using saves::Game;
 using Blob = std::array<uint8_t,entity::kMaxPartySize>;
+bool sameSlot(BoxSlot a,BoxSlot b) {return a.box==b.box&&a.slot==b.slot;}
 bool inBounds(const SaveFile& s, BoxSlot p) {
-    return p.box >= 0 && p.box < s.boxCount() && p.slot >= 0 && p.slot < s.boxSlotCount();
+    return p.box>=0&&p.box<s.boxCount()&&p.slot>=0&&p.slot<s.boxSlotCount();
 }
-bool sameTrainer(const SaveFile& a, const SaveFile& b) {
-    return a.game() == b.game() && a.trainerName() == b.trainerName() &&
-           a.trainerId() == b.trainerId() && a.secretId() == b.secretId() &&
-           a.trainerGender() == b.trainerGender() && a.partyCount() == b.partyCount();
-}
-bool sameParty(const SaveFile& a, const SaveFile& b) {
-    if (!sameTrainer(a,b)) return false;
-    for (int i = 0; i < a.partyCount(); ++i) {
-        Blob x{}, y{};
-        if (a.readPartySlot(i,x.data()) != SlotState::Valid ||
-            b.readPartySlot(i,y.data()) != SlotState::Valid ||
-            !std::equal(x.begin(),x.begin()+a.partySize(),y.begin())) return false;
+bool sameParty(const SaveFile& a,const SaveFile& b) {
+    if(a.game()!=b.game()||a.trainerName()!=b.trainerName()||a.trainerId()!=b.trainerId()||
+       a.secretId()!=b.secretId()||a.trainerGender()!=b.trainerGender()||a.partyCount()!=b.partyCount()||
+       a.boxCount()!=b.boxCount()||a.boxSlotCount()!=b.boxSlotCount()) return false;
+    for(int i=0;i<a.partyCount();++i) {
+        Blob x{},y{};
+        if(a.readPartySlot(i,x.data())!=SlotState::Valid||b.readPartySlot(i,y.data())!=SlotState::Valid||
+           !std::equal(x.begin(),x.begin()+a.partySize(),y.begin())) return false;
     }
     return true;
 }
-std::vector<Blob> boxContents(const SaveFile& s, int box, int skip = -1) {
-    std::vector<Blob> contents;
-    for (int i = 0; i < s.boxSlotCount(); ++i) {
-        Blob b{};
-        if (i != skip && s.readBoxSlot(box,i,b.data()) == SlotState::Valid)
-            contents.push_back(b);
-    }
-    return contents;
-}
-bool sourceMatches(const SaveFile& before,const SaveFile& after,BoxSlot from) {
-    if (!sameParty(before,after) || before.boxCount()!=after.boxCount() ||
-        before.boxSlotCount()!=after.boxSlotCount()) return false;
-    for (int b=0;b<before.boxCount();++b) {
-        if (before.boxName(b)!=after.boxName(b) ||
-            boxContents(before,b,b==from.box?from.slot:-1)!=boxContents(after,b))
-            return false;
+bool sourceMatches(const SaveFile& before,const SaveFile& after,const std::vector<TransferPair>& pairs) {
+    if(!sameParty(before,after)) return false;
+    for(int b=0;b<before.boxCount();++b) {
+        if(before.boxName(b)!=after.boxName(b)) return false;
+        int next=0;
+        for(int i=0;i<before.boxSlotCount();++i) {
+            Blob x{},y{};
+            if(before.readBoxSlot(b,i,x.data())!=SlotState::Valid) continue;
+            if(std::any_of(pairs.begin(),pairs.end(),[&](const TransferPair& p){return sameSlot(p.from,{b,i});})) continue;
+            // GB boxes are compacted, but compare every surviving entity exactly.
+            if(next>=after.boxSlotCount()||after.readBoxSlot(b,next++,y.data())!=SlotState::Valid||
+                !std::equal(x.begin(),x.begin()+before.storedSize(),y.begin())) return false;
+        }
+        for(;next<after.boxSlotCount();++next) {
+            Blob x{};
+            if(after.readBoxSlot(b,next,x.data())!=SlotState::Empty) return false;
+        }
     }
     return true;
 }
-bool destinationMatches(const SaveFile& before,const SaveFile& after,BoxSlot to,
-                        const std::array<uint8_t,80>& converted) {
-    if (!sameParty(before,after) || before.boxCount()!=after.boxCount() ||
-        before.boxSlotCount()!=after.boxSlotCount()) return false;
+bool destinationMatches(const SaveFile& before,const SaveFile& after,const std::vector<TransferPair>& pairs,
+                        const std::vector<std::array<uint8_t,80>>& converted) {
+    if(!sameParty(before,after)) return false;
     for(int b=0;b<before.boxCount();++b) {
         if(before.boxName(b)!=after.boxName(b)) return false;
         for(int i=0;i<before.boxSlotCount();++i) {
             Blob x{},y{};
-            auto xs=before.readBoxSlot(b,i,x.data());
-            auto ys=after.readBoxSlot(b,i,y.data());
-            if(b==to.box && i==to.slot) {
-                if(xs!=SlotState::Empty || ys!=SlotState::Valid ||
-                    !std::equal(converted.begin(),converted.end(),y.begin())) return false;
-            } else if(xs!=ys || (xs==SlotState::Valid && x!=y)) return false;
+            auto xs=before.readBoxSlot(b,i,x.data()),ys=after.readBoxSlot(b,i,y.data());
+            auto p=std::find_if(pairs.begin(),pairs.end(),[&](const TransferPair& p){return sameSlot(p.to,{b,i});});
+            if(p!=pairs.end()) {
+                const auto& expected=converted[static_cast<size_t>(p-pairs.begin())];
+                if(xs!=SlotState::Empty||ys!=SlotState::Valid||!std::equal(expected.begin(),expected.end(),y.begin())) return false;
+            } else if(xs!=ys||(xs==SlotState::Valid&&x!=y)) return false;
         }
     }
     return true;
 }
 }
-StagedTransfer stageCrystalToRuby(const std::vector<uint8_t>& source,
-                                  const std::vector<uint8_t>& destination,
-                                  BoxSlot from,BoxSlot to) {
+StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
+                           const std::vector<TransferPair>& pairs) {
     StagedTransfer result;
-    auto fail=[&](const char* error) { result.error=error; return result; };
-    auto s=saves::loadSaveFile(source);
-    auto d=saves::loadSaveFile(destination);
-    if (!s || !d || !saves::validateSave(*s) || !saves::validateSave(*d))
-        return fail("Invalid save or checksum");
-    if ((s->format()!=1 && s->format()!=2) || d->format()!=3 ||
-        s->language()!=2 || d->language()!=2)
+    auto fail=[&](const std::string& error) {
+        result.error=error;
+        return std::move(result);
+    };
+    if(pairs.empty()||pairs.size()>kMaxBatch) return fail("Select 1-10 Pokemon");
+    for(size_t i=0;i<pairs.size();++i) for(size_t j=0;j<i;++j)
+        if(sameSlot(pairs[i].from,pairs[j].from)||sameSlot(pairs[i].to,pairs[j].to))
+            return fail("Duplicate source or destination slot");
+    auto s=saves::loadSaveFile(source),d=saves::loadSaveFile(destination);
+    if(!s||!d||!saves::validateSave(*s)||!saves::validateSave(*d)) return fail("Invalid save or checksum");
+    if((s->format()!=1&&s->format()!=2)||d->format()!=3||s->language()!=2||d->language()!=2)
         return fail("Only English Gen I/II to Gen III saves supported");
-    if (!inBounds(*s,from) || !inBounds(*d,to)) return fail("Invalid box slot");
-    Blob selected{}, existing{};
-    if (s->readBoxSlot(from.box,from.slot,selected.data())!=SlotState::Valid)
-        return fail("Source slot is not valid");
-    if (d->readBoxSlot(to.box,to.slot,existing.data())!=SlotState::Empty)
-        return fail("Destination slot is not empty");
-    auto preview=previewGbToGba(selected.data(),s->storedSize(),s->format());
-    result.notes=preview.notes;
-    if (!preview.ok) { result.error=preview.error; return result; }
-    // Keep original images immutable and mutate independent staged copies.
+    std::vector<std::array<uint8_t,80>> converted;
+    converted.reserve(pairs.size());
+    // Convert immutable original slots first. No staged save allocations during PCCS.
+    for(size_t i=0;i<pairs.size();++i) {
+        const auto p=pairs[i];
+        const auto prefix=pairs.size()==1?std::string():"Pokemon "+std::to_string(i+1)+": ";
+        if(!inBounds(*s,p.from)||!inBounds(*d,p.to)) return fail(prefix+"Invalid box slot");
+        Blob selected{},existing{};
+        if(s->readBoxSlot(p.from.box,p.from.slot,selected.data())!=SlotState::Valid) return fail(prefix+"Source slot is not valid");
+        if(d->readBoxSlot(p.to.box,p.to.slot,existing.data())!=SlotState::Empty) return fail(prefix+"Destination slot is not empty");
+        auto preview=previewGbToGba(selected.data(),s->storedSize(),s->format());
+        if(!preview.ok) {
+            for(auto& note:preview.notes) result.notes.push_back(prefix+note);
+            return fail(prefix+preview.error);
+        }
+        for(auto& note:preview.notes) result.notes.push_back(prefix+note);
+        converted.push_back(preview.data);
+    }
+    // Stage and reload each save only once. Release mutable destination before
+    // source staging to reduce the physical DSi heap peak.
+    std::vector<uint8_t> destinationAfter;
+    {
+        auto dd=saves::loadSaveFile(destination);
+        if(!dd) return fail("Cannot stage destination");
+        for(size_t i=0;i<pairs.size();++i) {
+            auto to=pairs[i].to;
+            if(!dd->writeBoxSlot(to.box,to.slot,converted[i].data())) return fail("Cannot stage destination");
+        }
+        dd->refreshChecksums();
+        auto image=dd->data(); dd.reset();
+        auto dr=saves::loadSaveFile(std::move(image));
+        if(!dr||!saves::validateSave(*dr)||!destinationMatches(*d,*dr,pairs,converted))
+            return fail("Destination round-trip verification failed");
+        destinationAfter=dr->data();
+    }
+    d.reset();
     auto sd=saves::loadSaveFile(source);
-    auto dd=saves::loadSaveFile(destination);
-    if(!sd || !dd || !dd->writeBoxSlot(to.box,to.slot,preview.data.data()))
-        return fail("Cannot stage destination");
-    dd->refreshChecksums();
-    auto dr=saves::loadSaveFile(dd->data());
-    if(!dr || !saves::validateSave(*dr) || !destinationMatches(*d,*dr,to,preview.data))
-        return fail("Destination round-trip verification failed");
-    // Remove only after the staged destination has been fully reloaded.
-    if(!sd->clearBoxSlot(from.box,from.slot)) return fail("Cannot stage source removal");
+    if(!sd) return fail("Cannot stage source");
+    std::vector<BoxSlot> order;
+    for(auto p:pairs) order.push_back(p.from);
+    std::sort(order.begin(),order.end(),[](BoxSlot a,BoxSlot b){
+        return a.box!=b.box?a.box>b.box:a.slot>b.slot;
+    });
+    for(auto from:order) if(!sd->clearBoxSlot(from.box,from.slot)) return fail("Cannot stage source removal");
     sd->refreshChecksums();
-    auto sr=saves::loadSaveFile(sd->data());
-    if(!sr || !saves::validateSave(*sr) || !sourceMatches(*s,*sr,from))
+    auto image=sd->data(); sd.reset();
+    auto sr=saves::loadSaveFile(std::move(image));
+    if(!sr||!saves::validateSave(*sr)||!sourceMatches(*s,*sr,pairs))
         return fail("Source round-trip verification failed");
     result.sourceAfter=sr->data();
-    result.destinationAfter=dr->data();
-    result.converted=preview.data;
-    result.convertedBatch.push_back(preview.data);
-    result.ok=true;
-    return result;
-}
-StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,
-                            const std::vector<uint8_t>& destination,
-                            const std::vector<TransferPair>& pairs) {
-    StagedTransfer result;
-    if (pairs.empty() || pairs.size()>kMaxBatch) {result.error="Select 1-10 Pokemon";return result;}
-    for (size_t i=0;i<pairs.size();++i) for(size_t j=0;j<i;++j) {
-        auto a=pairs[i],b=pairs[j];
-        if ((a.from.box==b.from.box && a.from.slot==b.from.slot) ||
-            (a.to.box==b.to.box && a.to.slot==b.to.slot)) {
-            result.error="Duplicate source or destination slot";return result;
-        }
-    }
-    if(pairs.size()==1) return stageCrystalToRuby(source,destination,pairs[0].from,pairs[0].to);
-    // GB boxes compact on removal: process highest original slot first.
-    // Destination mapping and display remain in the user's selection order.
-    std::vector<size_t> order;
-    for(size_t i=0;i<pairs.size();++i) order.push_back(i);
-    std::sort(order.begin(),order.end(),[&](size_t i,size_t j) {
-        auto a=pairs[i].from,b=pairs[j].from;
-        return a.box!=b.box ? a.box>b.box : a.slot>b.slot;
-    });
-    std::vector<uint8_t> sb,db;
-    std::vector<std::array<uint8_t,80>> converted(pairs.size());
-    for(size_t i:order) {
-        auto p=pairs[i];
-        auto staged=stageCrystalToRuby(sb.empty()?source:sb,db.empty()?destination:db,p.from,p.to);
-        const auto prefix="Pokemon "+std::to_string(i+1)+": ";
-        if(!staged.ok) {
-            result.error=prefix+staged.error;result.notes=std::move(staged.notes);return result;
-        }
-        for(auto& note:staged.notes) result.notes.push_back(prefix+note);
-        converted[i]=staged.converted;
-        sb=std::move(staged.sourceAfter);db=std::move(staged.destinationAfter);
-    }
-    result.sourceAfter=std::move(sb);result.destinationAfter=std::move(db);
+    result.destinationAfter=std::move(destinationAfter);
     result.converted=converted.front();result.convertedBatch=std::move(converted);
     result.ok=true;
     return result;
+}
+StagedTransfer stageCrystalToRuby(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
+                                  BoxSlot from,BoxSlot to) {
+    return stageGbBatch(source,destination,{{from,to}});
 }
 }

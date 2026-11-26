@@ -109,7 +109,10 @@ int main() {
         REQUIRE(put(ga,bs)&&put(eb,bd));
         {
             ui::App app(bc);
-            press(app,ui::kKeyY);press(app,ui::kKeyA);
+            press(app,0); // render the central Home tile
+            press(app,ui::kKeyRight);press(app,ui::kKeyA);
+            REQUIRE(std::string(app.screenName())=="Transporter");
+            press(app,ui::kKeyA);
             press(app,ui::kKeyX); // first source
             press(app,ui::kKeyDown);press(app,ui::kKeyDown);
             press(app,ui::kKeyX); // third source

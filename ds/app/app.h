@@ -119,7 +119,11 @@ private:
     // What the Bank screen shows on the bottom screen (bank_ui.cpp).
     enum class BankMode : uint8_t { Browse, Menu, SortKey, Filters, Results };
     enum class Dialog : uint8_t { None, Message, Legality, ConfirmWrite, ConfirmClose, ConfirmDiscard, ConfirmRestore, ConfirmRelease };
-    enum class Pending : uint8_t { None, Scan, Write, Restore, Legalize, Create, GbaBackup };
+    enum class Pending : uint8_t { None, Scan, Write, Restore, Legalize, Create, GbaBackup
+#ifdef VPT_TRANSPORTER_PREVIEW
+        , TransferPreview, TransferCommit
+#endif
+    };
     // Lists shown by the picker screen when adding a Pokémon to an empty slot.
     enum class PickerKind : uint8_t { AddMenu, Species, Showdown, Event };
 
@@ -180,7 +184,7 @@ private:
     void transporterPreview();
     enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review };
     TransportPhase transportPhase_ = TransportPhase::Source;
-    std::vector<saves::SaveSummary> transportSaves_;
+    std::vector<saves::SaveSummary> transportSaves_, transportCatalog_;
     std::unique_ptr<saves::SaveFile> transportSave_;
     std::vector<uint8_t> transportSourceBytes_, transportDestBytes_;
     std::unique_ptr<pokemon::pccs_bridge::ReviewedTransfer> transportReview_;
@@ -329,6 +333,9 @@ private:
     bool badgeValid_ = false;
 
     int homeCursor_ = 0;
+    // Rendering-only cache; invalidated after any possible save mutation.
+    int drawBoxCacheIndex_ = -999;
+    std::vector<std::pair<saves::SlotState,pokemon::Pokemon>> drawBoxCache_;
     int saveMenuCursor_ = 0;
 
     io::Settings settings_;      // active preferences (loaded in the constructor)

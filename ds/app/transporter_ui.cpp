@@ -79,7 +79,7 @@ void App::runTransferRecovery() {
         r=br::recoverActiveJournal(j);
     else if(transferStartup_.state==br::StartupState::Completed)
         r=br::archiveActiveJournal(j);
-    scanned_=false;saveFiles_.clear();
+    scanned_=false;saveFiles_.clear();transportCatalog_.clear();
     if(refreshTransferGate()) showMessage("Transporter",r.message);
     else transferStartup_.message=r.message;
 #endif
@@ -122,7 +122,8 @@ void App::openTransporter() {
     transportRows_.clear();transportNotes_.clear();transportPositions_.clear();
     transportSelected_.clear();
     transportMessage_.clear();transportAccepted_=false;transportConfirm_=false;
-    transportSaves_=saves::findPokemonSaves(config_.scanRoot,3);
+    transportCatalog_=saves::findPokemonSaves(config_.scanRoot,3,&transportCatalog_);
+    transportSaves_=transportCatalog_;
     transportSaves_.erase(std::remove_if(transportSaves_.begin(),transportSaves_.end(),
         [](const saves::SaveSummary& s){return saves::gameGeneration(s.game)!=1 && saves::gameGeneration(s.game)!=2;}),
         transportSaves_.end());
@@ -219,7 +220,7 @@ void App::updateTransporter(const Input& in) {
 #ifdef VPT_TRANSPORTER_WRITE
     if(transportPhase_==TransportPhase::Review && transportReview_ && transportAccepted_ &&
        (in.pressed&kKeyStart)) {
-        if(transportConfirm_) commitTransporter();
+        if(transportConfirm_) pending_=Pending::TransferCommit;
         else {transportConfirm_=true;transportMessage_="START again to MOVE Pokemon";}
         return;
     }
@@ -253,7 +254,7 @@ void App::updateTransporter(const Input& in) {
             if(transportSelected_.empty()) transportSelected_.push_back(transportPositions_[transportCursor_]);
             transportMessage_=std::to_string(transportSelected_.size())+" Pokemon selected";
             transportSave_.reset();
-            transportSaves_=saves::findPokemonSaves(config_.scanRoot,3);
+            transportSaves_=transportCatalog_;
             transportSaves_.erase(std::remove_if(transportSaves_.begin(),transportSaves_.end(),
                 [](const saves::SaveSummary& s){return saves::gameGeneration(s.game)!=3;}),
                 transportSaves_.end());
@@ -264,7 +265,7 @@ void App::updateTransporter(const Input& in) {
             break;
         }
         case TransportPhase::Destination: transporterSelectSave(false);break;
-        case TransportPhase::DestinationSlot: transporterPreview();break;
+        case TransportPhase::DestinationSlot: pending_=Pending::TransferPreview;break;
         case TransportPhase::Review:
             if(transportReview_ && transportAccepted_) {
                 if(transportReview_->originalsMatch()) {

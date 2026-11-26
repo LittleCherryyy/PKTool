@@ -695,7 +695,12 @@ constexpr int kEaseFrac = 16;    // selection bar position unit (1/16 pixel)
 bool App::update(const Input& input) {
     const Screen before = screen_;
     const bool keepRunning = updateFrame(input);
+    const uint32_t navigation = kKeyUp|kKeyDown|kKeyLeft|kKeyRight|kKeyL|kKeyR;
+    if(screen_!=before || input.touched || ((input.pressed|input.repeated)&~navigation) ||
+       (before==Screen::Box && pending_!=Pending::None)) drawBoxCacheIndex_=-999;
     ++frame_;
+    // Defer expensive legality badge until the box cursor settles.
+    if(screen_==Screen::Box && frame_-marqueeStart_==12) redraw_=true;
     if (screen_ != before || input.pressed || input.repeated || input.touched) marqueeStart_ = frame_;
     if (marqueeActive_ && (frame_ - marqueeStart_) % 3 == 0) redraw_ = true;
     tickAnimations(before);
@@ -719,8 +724,7 @@ void App::tickAnimations(Screen before) {
         if (!config_.hardwareFade) redraw_ = true;
     }
     if (easing_) redraw_ = true;
-    const bool bobbing = screen_ == Screen::Box || screen_ == Screen::Bank || screen_ == Screen::Picker ||
-                         screen_ == Screen::Edit;
+    const bool bobbing = screen_ == Screen::Edit || screen_ == Screen::Bank;
     if (bobbing && dialog_ == Dialog::None && pending_ == Pending::None && frame_ % kBobPeriod == 0) redraw_ = true;
 }
 
@@ -931,6 +935,10 @@ void App::runPending() {
         case Pending::Create:
             createPokemon();
             break;
+#ifdef VPT_TRANSPORTER_PREVIEW
+        case Pending::TransferPreview: transporterPreview();break;
+        case Pending::TransferCommit: commitTransporter();break;
+#endif
         case Pending::None:
             break;
     }
@@ -1059,16 +1067,29 @@ bool App::updateHome(const Input& in) {
         return true;
     }
 #endif
-    constexpr int kTiles = 4;
+    int kTiles = 4;
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(config_.transporterPreview) kTiles=5;
+#endif
     int zone = in.touched ? touchedZone(in) : -1;
     bool activate = in.pressed & kKeyA;
     if (zone >= kZoneItem && zone < kZoneItem + kTiles) {
         homeCursor_ = zone - kZoneItem;
         activate = true;
     }
-    if (in.repeated & kKeyLeft) homeCursor_ = (homeCursor_ & 2) | ((homeCursor_ + 1) & 1);
-    if (in.repeated & kKeyRight) homeCursor_ = (homeCursor_ & 2) | ((homeCursor_ + 1) & 1);
-    if (in.repeated & (kKeyUp | kKeyDown)) homeCursor_ ^= 2;
+    if(kTiles==5) {
+        if(homeCursor_==4) {
+            if(in.repeated&kKeyLeft) homeCursor_=0;
+            else if(in.repeated&kKeyRight) homeCursor_=1;
+            else if(in.repeated&kKeyUp) homeCursor_=0;
+            else if(in.repeated&kKeyDown) homeCursor_=2;
+        } else if((in.repeated&kKeyRight) && !(homeCursor_&1)) homeCursor_=4;
+        else if((in.repeated&kKeyLeft) && (homeCursor_&1)) homeCursor_=4;
+        else if(in.repeated&(kKeyUp|kKeyDown)) homeCursor_^=2;
+    } else {
+        if(in.repeated&(kKeyLeft|kKeyRight)) homeCursor_=(homeCursor_&2)|((homeCursor_+1)&1);
+        if(in.repeated&(kKeyUp|kKeyDown)) homeCursor_^=2;
+    }
     if (in.pressed & kKeyStart) return false;
     if (!activate) {
         return true;
@@ -1086,6 +1107,11 @@ bool App::updateHome(const Input& in) {
         case 2:
             openBank(false, Screen::Home);
             break;
+#ifdef VPT_TRANSPORTER_PREVIEW
+        case 4:
+            if(config_.transporterPreview) openTransporter();
+            break;
+#endif
         default:
             openSettings();  // the About box is its last row
             break;
@@ -2419,6 +2445,10 @@ void App::draw(Canvas& top, Canvas& bottom) {
                            : pending_ == Pending::Legalize ? "Legalizing..."
                            : pending_ == Pending::Create   ? "Creating..."
                            : pending_ == Pending::GbaBackup ? "Reading GBA cartridge..."
+#ifdef VPT_TRANSPORTER_PREVIEW
+                           : pending_ == Pending::TransferPreview ? "Checking transfer..."
+                           : pending_ == Pending::TransferCommit ? "Writing journal..."
+#endif
                                                            : "Working...";
         bottom.text(kFontSmall, 58, 88, 140, Align::Center, text, kText);
         zones_.clear();
@@ -2869,10 +2899,14 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
         {"Bank", "Pok\xC3\xA9mon on the SD"},
         {"Settings", "Options and About"},
     };
+    bool withTransporter=false;
+#ifdef VPT_TRANSPORTER_PREVIEW
+    withTransporter=config_.transporterPreview;
+#endif
     for (int i = 0; i < 4; ++i) {
-        int x = 8 + (i % 2) * 124;
+        int x = withTransporter ? 4 + (i%2)*160 : 8 + (i % 2) * 124;
         int y = 8 + (i / 2) * 82;
-        int w = 116;
+        int w = withTransporter ? 88 : 116;
         int h = 76;
         bool selected = i == homeCursor_;
         bool disabled = false;
@@ -2905,12 +2939,21 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
                 break;
         }
         bottom.text(kFontLarge, x, y + 46, w, Align::Center, tiles[i].label, ink);
-        bottom.text(kFontSmall, x, y + 61, w, Align::Center, tiles[i].caption, disabled ? kDim : kMuted);
+        bottom.text(kFontSmall, x, y + 61, w, Align::Center,
+                    withTransporter ? (i==0?"Saves":i==1?"Restore":i==2?"Storage":"Options") : tiles[i].caption,
+                    disabled ? kDim : kMuted);
         zones_.push_back({x, y, w, h, kZoneItem + i});
     }
 #ifdef VPT_TRANSPORTER_PREVIEW
     if (config_.transporterPreview) {
-        top.text(kFontSmall, 0, 159, 256, Align::Center, "Y: Poke Transporter (preview)", kAccent);
+        const bool selected=homeCursor_==4;
+        bottom.roundRect(94,57,68,62,selected?kAccent:kBorder,kPanel,selected?2:1);
+        drawBallEmblem(bottom,128,77,11,kRed,kText);
+        bottom.hline(108,91,40,kAccent);
+        bottom.arrow(145,88,7,1,kAccent);
+        bottom.text(kFontSmall,94,101,68,Align::Center,"Transporter",kText);
+        zones_.push_back({94,57,68,62,kZoneItem+4});
+        top.text(kFontSmall,0,159,256,Align::Center,"Poke Transporter | GB to GBA",kAccent);
         drawHints(bottom, {{"A", "Open"}, {"Y", "Transporter"}, {"START", "Exit"}}, {kKeyA, kKeyY, kKeyStart});
         return;
     }
@@ -3146,11 +3189,18 @@ void App::drawBox(Canvas& top, Canvas& bottom) {
     // Top: summary of the selected Pokémon.
     std::string status = saveTitle() + "  \xE2\x80\xA2  " + save_->trainerName();
     drawChrome(top, status, moving_ ? "Moving" : unsaved_ ? "Unsaved" : "", moving_ ? kAccent : kYellow);
-    pokemon::Pokemon selected;
-    auto state = readSlot(box_, slotCursor_, selected);
+    if(drawBoxCacheIndex_!=box_ || static_cast<int>(drawBoxCache_.size())!=slotCount()) {
+        drawBoxCache_.clear();drawBoxCache_.resize(slotCount());
+        for(int i=0;i<slotCount();++i)
+            drawBoxCache_[i].first=readSlot(box_,i,drawBoxCache_[i].second);
+        drawBoxCacheIndex_=box_;
+    }
+    const auto& selected=drawBoxCache_[slotCursor_].second;
+    auto state=drawBoxCache_[slotCursor_].first;
     int cursorX = 0, cursorY = 0, cursorW = 0;  // the menu is anchored here
     drawSummary(top, state == saves::SlotState::Valid ? &selected : nullptr,
-                state == saves::SlotState::BadChecksum);
+                state == saves::SlotState::BadChecksum,
+                frame_-marqueeStart_>=12);
 
     // Bottom: box header, grid, hints.
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
@@ -3176,8 +3226,8 @@ void App::drawBox(Canvas& top, Canvas& bottom) {
             int y = 27 + (slot / 2) * 48;
             int w = 117;
             int h = 44;
-            pokemon::Pokemon p;
-            auto s = readSlot(-1, slot, p);
+            const auto& p=drawBoxCache_[slot].second;
+            auto s=drawBoxCache_[slot].first;
             bool used = s == saves::SlotState::Valid;
             bottom.roundRect(x, y, w, h, used ? kBorder : kDim, used ? kPanel : kBoxArea);
             if (used) {
@@ -3203,8 +3253,8 @@ void App::drawBox(Canvas& top, Canvas& bottom) {
         for (int slot = 0; slot < save_->boxSlotCount(); ++slot) {
             int x = 8 + (slot % 6) * 40;
             int y = 25 + (slot / 6) * 29;
-            pokemon::Pokemon p;
-            auto s = readSlot(box_, slot, p);
+            const auto& p=drawBoxCache_[slot].second;
+            auto s=drawBoxCache_[slot].first;
             if (s == saves::SlotState::Valid) {
                 drawIcon(bottom, x, y, 40, 29, p, true);
                 if (p.shiny) drawStar(bottom, x + 32, y + 1, kYellow);
@@ -3409,8 +3459,17 @@ void App::drawPicker(Canvas& top, Canvas& bottom) {
         top.text(kFontLarge, 4, 66, 248, Align::Center, "Cannot be received", kText);
         top.text(kFontSmall, 8, 92, 240, Align::Center, eventNotes_[static_cast<size_t>(pickerCursor_)], kMuted);
         top.text(kFontSmall, 8, 108, 240, Align::Center, eventTitle(), kDim);
+    } else if(pickerKind_==PickerKind::Species) {
+        // Do not run encounter generation/PID search on every cursor move.
+        const auto species=pickerSpecies_[static_cast<size_t>(pickerCursor_)];
+        top.roundRect(4,kBodyTop+3,248,150,kBorder,kPanel);
+        pokemon::Pokemon mon;mon.species=species;
+        drawIcon(top,12,57,64,48,mon,false);
+        top.text(kFontLarge,84,55,160,Align::Left,data::speciesName(species),kText);
+        top.text(kFontSmall,84,79,160,Align::Left,"#"+std::to_string(species),kMuted);
+        top.text(kFontSmall,12,115,232,Align::Center,eggMode_?"A: Generate egg":"A: Generate Pokemon",kAccent);
+        top.text(kFontSmall,12,133,232,Align::Center,"Stats and moves are built on confirmation.",kMuted);
     } else {
-        // Only received events are final; the others are legalized on creation.
         drawSummary(top, &pickerPreview(), false, pickerKind_ == PickerKind::Event);
     }
 
