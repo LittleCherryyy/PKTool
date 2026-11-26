@@ -222,3 +222,23 @@ exceeds 128 KiB, alongside ten alternating edition packs, post-clear
 reopening and optional SD fallback. Normal host sanitizer CI, independent
 conversion/PKHeX audit and full ARM9 link are release gates. Passing them
 does not establish DSi render frame rate or physical FAT power-loss safety.
+
+## VPT034: source/destination art and immutable-save visual regression
+The PCCS-linked host UI regression now synthesizes distinct red Crystal and
+blue Ruby PKS1/PKSP front sprites for the same boxed Pokemon and drives the
+entire double-confirmation/animation sequence. It renders actual 256x192
+top-screen framebuffers and asserts that early frames contain the source-edition
+sprite (not the GBA art), that inbound frames contain only destination-edition
+art, and that **neither save nor the active journal exists in mutated form**
+before animation completion. A user skip then exercises the existing
+destination-first journal transaction and verified archival.
+
+The image packs in this test contain solid synthetic pixels, never downloaded
+Pokemon artwork, and test normal NitroFS-style pack loading through the same
+SpriteStore API as hardware. This proves logical sprite switching and file
+immutability at the sampled checkpoints, not full physical LCD rendering,
+battery/power-loss resilience or exact hardware frame cadence.
+
+VPT034 continues to require the original PCCS conversion/PKHeX host suite,
+the normal sanitizer build and the experimental ARM9 link. Do not release a
+PCCS-linked NDS until separate redistribution permission is established.
