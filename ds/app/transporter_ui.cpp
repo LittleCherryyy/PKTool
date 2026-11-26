@@ -252,7 +252,11 @@ void App::tickTransportScan() {
     showTransportSaveList(transportScanSource_,"Y: Refresh saves");
 }
 void App::cancelTransportBusy() {
-    if(transportScan_) {
+    if(transportBatch_) {
+        transportBatch_.reset();
+        const auto focus=transportDest_;
+        showTransportSaveList(false,"Review cancelled - no saves changed",focus);
+    } else if(transportScan_) {
         transportScan_.reset();
         showTransportSaveList(transportScanSource_,"Scan cancelled - Y to refresh");
     } else {
@@ -375,9 +379,15 @@ void App::transporterPreview() {
     transportConfirm_=false;
     transportSave_.reset();sprites_.clear();
     transportNotes_.clear();transportAccepted_=false;
-    transportReview_=br::ReviewedTransfer::createBatch(
-        transportSource_,transportDest_,transportSourceBytes_,transportDestBytes_,
-        pairs,transportMessage_,transportNotes_,transportLanguage_,&transportEntries_);
+    transportEntries_.clear();transportReview_.reset();
+    transportBatch_=std::make_unique<br::ReviewedBatch>(transportSource_,transportDest_,
+        transportSourceBytes_,transportDestBytes_,pairs,transportLanguage_);
+}
+void App::tickTransportPreview() {
+    if(!transportBatch_->step()) return;
+    transportReview_=transportBatch_->take(transportMessage_,transportNotes_,&transportEntries_);
+    transportBatch_.reset();
+    const auto& pairs=transportReviewPairs_;
     transportAccepted_=bool(transportReview_);
     transportResultMons_.clear();
     if(transportReview_) {
@@ -581,6 +591,31 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
 }
 void App::drawTransporter(Canvas& top,Canvas& bottom) {
     if(transportAnimating_) {drawTransportAnimation(top,bottom);return;}
+    if(transportBatch_) {
+        const auto done=transportBatch_->completed(),total=transportBatch_->total();
+        drawChrome(top,"Checking transfer","READ ONLY",kAccent);
+        top.roundRect(5,35,246,137,kBorder,kPanel);
+        top.text(kFontLarge,8,48,240,Align::Center,done==total?"Verifying saves":"Checking Pokemon",kText);
+        top.text(kFontLarge,8,75,240,Align::Center,std::to_string(done)+" / "+std::to_string(total),kAccent);
+        top.roundRect(19,104,218,13,kBorder,kPanelDark);
+        top.fillRect(22,107,static_cast<int>(212*done/std::max<size_t>(1,total)),7,kGreen);
+        if(done<total) {
+            const auto pos=transportReviewPairs_[done].from;
+            top.text(kFontSmall,8,135,240,Align::Center,"Next: "+slotLabel(pos.box,pos.slot),kText);
+        }
+        bottom.clear(kBackground);
+        const auto& entries=transportBatch_->entries();
+        for(size_t i=0;i<total;++i) {
+            const int x=5+static_cast<int>(i%5)*50,y=25+static_cast<int>(i/5)*48;
+            const Color color=i<entries.size()?(entries[i].ready?kGreen:kRed):i==done?kYellow:kBorder;
+            bottom.roundRect(x,y,46,43,color,kPanel,2);
+            if(i<entries.size()&&entries[i].mon.species) drawIcon(bottom,x+4,y+1,38,28,entries[i].mon,false);
+            bottom.text(kFontSmall,x,y+29,46,Align::Center,i<entries.size()?(entries[i].ready?"OK":"BLOCK"):std::to_string(i+1),color);
+        }
+        bottom.text(kFontSmall,0,141,256,Align::Center,"No save writes during review",kMuted);
+        drawHints(bottom,{{"B","Cancel"}},{kKeyB});
+        return;
+    }
     if(transporterBusy()) {
         drawChrome(top,"Poke Transporter","READING",kAccent);
         top.roundRect(5,36,246,135,kBorder,kPanel);

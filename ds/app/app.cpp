@@ -741,6 +741,7 @@ bool App::updateFrame(const Input& rawInput) {
 #ifdef VPT_TRANSPORTER_PREVIEW
     if(screen_==Screen::Transporter && transporterBusy()) {
         if(rawInput.pressed&kKeyB) cancelTransportBusy();
+        else if(transportBatch_) tickTransportPreview();
         else if(transportScan_) tickTransportScan();
         else tickTransportBoxes();
         redraw_=true;

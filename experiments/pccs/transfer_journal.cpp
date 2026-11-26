@@ -271,32 +271,53 @@ std::unique_ptr<ReviewedTransfer> ReviewedTransfer::createBatch(
     const std::string& source,const std::string& destination,
     const Bytes& expectedSource,const Bytes& expectedDestination,
     const std::vector<TransferPair>& pairs,std::string& error,std::vector<std::string>& notes,uint8_t sourceLanguage,std::vector<EntryReview>* entries) {
-    error.clear(); notes.clear();if(entries) entries->clear();
-    auto s=normalized(source),d=normalized(destination);
-    if(s.empty()) {error="Unsupported source save path";return nullptr;}
-    if(d.empty()) {error="Unsupported destination save path";return nullptr;}
-    if(pathKey(s)==pathKey(d)) {error="Source and destination alias";return nullptr;}
-    if(expectedSource.empty()||expectedDestination.empty()||
-       expectedSource.size()>maxSave||expectedDestination.size()>maxSave) {
-        error="Unsupported save size";return nullptr;
+    ReviewedBatch batch(source,destination,expectedSource,expectedDestination,pairs,sourceLanguage);
+    while(!batch.step()) {}
+    return batch.take(error,notes,entries);
+}
+ReviewedBatch::ReviewedBatch(const std::string& source,const std::string& destination,
+    const Bytes& expectedSource,const Bytes& expectedDestination,
+    const std::vector<TransferPair>& pairs,uint8_t sourceLanguage)
+    :source_(normalized(source)),destination_(normalized(destination)),sb_(expectedSource),
+     db_(expectedDestination),batch_(sb_,db_,pairs,sourceLanguage){}
+size_t ReviewedBatch::completed() const{return batch_.completed();}
+size_t ReviewedBatch::total() const{return batch_.total();}
+const std::vector<EntryReview>& ReviewedBatch::entries() const{return done_?staged_.entries:batch_.entries();}
+bool ReviewedBatch::step() {
+    if(done_) return true;
+    if(!checked_) {
+        const auto& s=source_;const auto& d=destination_;
+    if(s.empty()) {error_="Unsupported source save path";done_=true;return true;}
+    if(d.empty()) {error_="Unsupported destination save path";done_=true;return true;}
+    if(pathKey(s)==pathKey(d)) {error_="Source and destination alias";done_=true;return true;}
+    if(sb_.empty()||db_.empty()||
+       sb_.size()>maxSave||db_.size()>maxSave) {
+        error_="Unsupported save size";done_=true;return true;
     }
     for(const auto& p:{s+".vpt-old",s+".vpt-new",d+".vpt-old",d+".vpt-new"}) {
-        if(exists(p)) {error="Existing sidecar or stat failure: "+p;return nullptr;}
+        if(exists(p)) {error_="Existing sidecar or stat failure: "+p;done_=true;return true;}
     }
-    if(!exact(s,expectedSource)||!exact(d,expectedDestination)) {
-        error="Selected save changed; restart preview"; return nullptr;
+    if(!exact(s,sb_)||!exact(d,db_)) {
+        error_="Selected save changed; restart preview"; done_=true;return true;
     }
-    auto staged=stageGbBatch(expectedSource,expectedDestination,pairs,sourceLanguage);
-    notes=staged.notes;
-    if(entries) *entries=std::move(staged.entries);
-    if(!staged.ok) { error=staged.error;return nullptr; }
-    if(!exact(s,expectedSource)||!exact(d,expectedDestination)) {
-        error="Save changed during conversion";return nullptr;
+
+        checked_=true;return false;
     }
+    if(!batch_.step()) return false;
+    staged_=batch_.take();
+    if(!staged_.ok) error_=staged_.error;
+    else if(!exact(source_,sb_)||!exact(destination_,db_)) error_="Save changed during conversion";
+    done_=true;return true;
+}
+std::unique_ptr<ReviewedTransfer> ReviewedBatch::take(std::string& error,std::vector<std::string>& notes,
+                                                      std::vector<EntryReview>* entries) {
+    error=done_?error_:"Batch not complete";
+    notes=staged_.notes;if(entries) *entries=std::move(staged_.entries);
+    if(!done_||!error.empty()||!staged_.ok) return nullptr;
     std::unique_ptr<ReviewedTransfer> reviewed(new ReviewedTransfer);
-    reviewed->source_=std::move(s);reviewed->destination_=std::move(d);
-    reviewed->sourceBefore_=expectedSource;reviewed->destinationBefore_=expectedDestination;
-    reviewed->staged_=std::move(staged);
+    reviewed->source_=source_;reviewed->destination_=destination_;
+    reviewed->sourceBefore_=sb_;reviewed->destinationBefore_=db_;
+    reviewed->staged_=std::move(staged_);
     return reviewed;
 }
 bool ReviewedTransfer::originalsMatch() const {

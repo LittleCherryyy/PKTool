@@ -108,7 +108,7 @@ public:
     bool animating() const { return fadeLeft_ > 0 || easing_; }
     bool animationsEnabled() const { return settings_.animations; }
 #ifdef VPT_TRANSPORTER_PREVIEW
-    bool transporterBusy() const {return bool(transportScan_)||transportLoadBox_>=0;}
+    bool transporterBusy() const {return bool(transportScan_)||transportLoadBox_>=0||bool(transportBatch_);}
     const std::vector<std::string>& transporterRows() const {return transportRows_;}
 #endif
     void setAnimations(bool on) { settings_.animations = on; }
@@ -195,12 +195,14 @@ private:
     int transportLoadBox_=-1;
     std::string transportLoadPath_;
     void transporterPreview();
+    void tickTransportPreview();
     enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review };
     TransportPhase transportPhase_ = TransportPhase::Source;
     std::vector<saves::SaveSummary> transportSaves_, transportCatalog_;
     std::unique_ptr<saves::SaveFile> transportSave_;
     std::vector<uint8_t> transportSourceBytes_, transportDestBytes_;
     std::unique_ptr<pokemon::pccs_bridge::ReviewedTransfer> transportReview_;
+    std::unique_ptr<pokemon::pccs_bridge::ReviewedBatch> transportBatch_;
     std::string transportSource_, transportDest_, transportMessage_;
     std::vector<std::string> transportRows_, transportNotes_;
     std::vector<std::pair<int,int>> transportPositions_;

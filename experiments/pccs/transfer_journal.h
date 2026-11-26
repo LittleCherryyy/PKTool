@@ -26,6 +26,7 @@ JournalResult recoverActiveJournal(const std::string& journal);
 // stopAfterFirstSidecar is a host fault-injection hook.
 JournalResult archiveActiveJournal(const std::string& journal,bool stopAfterFirstSidecar=false);
 // Opaque reviewed transfer: only the factory can construct a conversion.
+class ReviewedBatch;
 class ReviewedTransfer {
 public:
     static std::unique_ptr<ReviewedTransfer> create(
@@ -44,10 +45,32 @@ public:
     ReviewedTransfer(const ReviewedTransfer&)=delete;
     ReviewedTransfer& operator=(const ReviewedTransfer&)=delete;
 private:
+    friend class ReviewedBatch;
     ReviewedTransfer()=default;
     std::string source_,destination_;
     std::vector<uint8_t> sourceBefore_,destinationBefore_;
     StagedTransfer staged_;
+};
+// Cooperative reviewed conversion. Input snapshots must remain immutable
+// and alive until the session is destroyed. No journal or save writes.
+class ReviewedBatch {
+public:
+    ReviewedBatch(const std::string& source,const std::string& destination,
+        const std::vector<uint8_t>& expectedSource,const std::vector<uint8_t>& expectedDestination,
+        const std::vector<TransferPair>& pairs,uint8_t sourceLanguage);
+    bool step();
+    size_t completed() const;
+    size_t total() const;
+    const std::vector<EntryReview>& entries() const;
+    std::unique_ptr<ReviewedTransfer> take(std::string& error,std::vector<std::string>& notes,
+                                            std::vector<EntryReview>* entries=nullptr);
+private:
+    std::string source_,destination_,error_;
+    const std::vector<uint8_t>& sb_;
+    const std::vector<uint8_t>& db_;
+    BatchStage batch_;
+    StagedTransfer staged_;
+    bool checked_=false,done_=false;
 };
 // Prepare immutable journal; does not alter either original save.
 // Use a fresh journal path outside both saves. Keep it as a backup afterward.

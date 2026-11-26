@@ -57,6 +57,40 @@ int main() {
     REQUIRE(!br::stageCrystalToRuby(originalS,originalD,{-1,0},{0,5}).ok);
     REQUIRE(!br::stageCrystalToRuby(originalS,originalD,{0,1},{14,0}).ok);
     REQUIRE(!br::stageCrystalToRuby(fakegb::blankGen2(fakegb::kGen2Gs),originalD,{0,1},{0,5}).ok);
+    {
+        auto gs=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Gs));
+        auto em=sv::loadSaveFile(fake::blankGen3(sv::Game::Emerald));
+        REQUIRE(gs&&em);
+        trainer.version=39;
+        std::vector<br::TransferPair> pairs;
+        for(int i=0;i<10;++i) {
+            auto mon=pk::create4::newPokemon(trainer,155,5,255+i);mon.heldItem=0;
+            pk::create4::encode(mon,read.data());
+            REQUIRE(gs->writeBoxSlot(0,i,read.data()));
+            pairs.push_back({{0,i},{7,i}});
+        }
+        gs->refreshChecksums();em->refreshChecksums();
+        const auto before=gs->data(),dest=em->data();
+        {
+            br::BatchStage cancelled(before,dest,pairs,2);
+            REQUIRE(!cancelled.step());REQUIRE(!cancelled.step());
+            REQUIRE(cancelled.completed()==1);
+            REQUIRE(!cancelled.take().ok);
+        }
+        br::BatchStage batch(before,dest,pairs,2);
+        REQUIRE(!batch.step());
+        for(size_t i=0;i<10;++i) {
+            REQUIRE(!batch.step());
+            REQUIRE(batch.completed()==i+1&&batch.entries().size()==i+1);
+        }
+        REQUIRE(batch.step());
+        auto out=batch.take();REQUIRE(out.ok&&out.convertedBatch.size()==10);
+        REQUIRE(gs->data()==before&&em->data()==dest);
+        auto final=sv::loadSaveFile(out.destinationAfter);REQUIRE(final&&sv::validateSave(*final));
+        for(int i=0;i<10;++i) REQUIRE(final->readBoxSlot(7,i,read.data())==sv::SlotState::Valid);
+        trainer.version=41;
+        std::puts("PASS: cooperative ten-Pokemon Gold/Silver to Emerald, cancel and exact stage");
+    }
     for(auto game:{sv::Game::RubySapphire,sv::Game::Emerald,sv::Game::FireRedLeafGreen}) {
         auto dest=fake::blankGen3(game);
         auto batch=br::stageGbBatch(originalS,dest,{{{0,0},{0,3}},{{0,2},{0,8}},{{1,0},{1,0}}});

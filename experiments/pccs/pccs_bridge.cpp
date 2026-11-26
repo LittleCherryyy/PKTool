@@ -6,6 +6,7 @@
 #include "core/pokemon/pk1.h"
 #include "core/pokemon/gb_common.h"
 #include <Gen1Pokemon.h>
+#include <memory>
 #include "core/pokemon/pk3.h"
 #include "core/legality/legality.h"
 // External PCCS headers from pinned upstream; not bundled.
@@ -61,7 +62,8 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
        !validName(generation==1?pk1::kNicknameOffset:pk2::kNicknameOffset,original.language==1?5:10)) {
         result.error="Invalid source name termination"; return result;
     }
-    ::PokemonTables table;
+    // The original GBA library assumes a generous stack. ARM9 does not.
+    auto table=std::make_unique<::PokemonTables>();
     ::Gen3Pokemon converted;
     const auto otOffset = generation==1 ? pk1::kOtOffset : pk2::kOtOffset;
     const auto nickOffset = generation==1 ? pk1::kNicknameOffset : pk2::kNicknameOffset;
@@ -73,12 +75,12 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
         original.shiny = gb::isShinyDvs(original.ivs);
         ::Gen1Pokemon source(sourceLanguage);
         source.loadData(sourceLanguage,entity,entity+nickOffset,entity+otOffset,entity[0]);
-        convertedOk = source.convertToGen3(&table,&converted,::LEGAL,false);
+        convertedOk = source.convertToGen3(table.get(),&converted,::LEGAL,false);
         result.notes.push_back("Gen I: gender and shiny derived from original DVs");
     } else {
         ::Gen2Pokemon source(sourceLanguage);
         source.loadData(sourceLanguage,entity,entity+nickOffset,entity+otOffset,entity[0]);
-        convertedOk = source.convertToGen3(&table,&converted,::LEGAL,false);
+        convertedOk = source.convertToGen3(table.get(),&converted,::LEGAL,false);
     }
     if (!convertedOk) {
         result.error = "PCCS LEGAL conversion refused";

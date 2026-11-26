@@ -109,18 +109,29 @@ bool destinationMatches(const SaveFile& before,const SaveFile& after,const std::
     return true;
 }
 }
-StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
-                           const std::vector<TransferPair>& pairs,uint8_t sourceLanguage) {
+struct BatchStage::State {
+    const std::vector<uint8_t>& source;
+    const std::vector<uint8_t>& destination;
+    const std::vector<TransferPair> pairs;
+    uint8_t sourceLanguage;
+    std::unique_ptr<SaveFile> s,d;
     StagedTransfer result;
-    auto fail=[&](const std::string& error) {
-        result.error=error;
-        return std::move(result);
-    };
+    std::vector<std::array<uint8_t,80>> converted;
+    std::vector<Pocket> plannedBag;
+    std::vector<bool> changedBag;
+    size_t index=0;
+    bool allReady=true,done=false,initialized=false;
+    State(const std::vector<uint8_t>& a,const std::vector<uint8_t>& b,const std::vector<TransferPair>& p,uint8_t lang)
+        :source(a),destination(b),pairs(p),sourceLanguage(lang){}
+    bool fail(const std::string& error) {result.error=error;done=true;return true;}
+    bool step() {
+        if(done) return true;
+        if(!initialized) {
     if(pairs.empty()||pairs.size()>kMaxBatch) return fail("Select 1-10 Pokemon");
     for(size_t i=0;i<pairs.size();++i) for(size_t j=0;j<i;++j)
         if(sameSlot(pairs[i].from,pairs[j].from)||sameSlot(pairs[i].to,pairs[j].to))
             return fail("Duplicate source or destination slot");
-    auto s=saves::loadSaveFile(source),d=saves::loadSaveFile(destination);
+    s=saves::loadSaveFile(source);d=saves::loadSaveFile(destination);
     if(!s||!d||!saves::validateSave(*s)||!saves::validateSave(*d)) return fail("Invalid save or checksum");
     if((s->format()!=1&&s->format()!=2)||d->format()!=3||
        !supportedLanguage(s->language())||!supportedLanguage(d->language()))
@@ -128,18 +139,16 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
     if(!sourceLanguage) sourceLanguage=s->language();
     if(!supportedLanguage(sourceLanguage)||(sourceLanguage==1)!=(s->language()==1))
         return fail("Selected language does not match GB save layout");
-    std::vector<std::array<uint8_t,80>> converted;
-    converted.reserve(pairs.size());
-    std::vector<Pocket> plannedBag;
-    std::vector<bool> changedBag;
-    if(s->format()==2) {
-        for(int p=0;p<s->pocketCount();++p) plannedBag.push_back(s->readPocket(p));
-        changedBag.resize(plannedBag.size(),false);
-    }
-    bool allReady=true;
-    // Review every selected entity even if another is blocked. Bag capacity is
-    // reserved only for an entity whose conversion succeeded.
-    for(size_t i=0;i<pairs.size();++i) {
+
+            converted.reserve(pairs.size());
+            if(s->format()==2) {
+                for(int p=0;p<s->pocketCount();++p) plannedBag.push_back(s->readPocket(p));
+                changedBag.resize(plannedBag.size(),false);
+            }
+            initialized=true;return false;
+        }
+        if(index<pairs.size()) {
+            const auto i=index;
         const auto p=pairs[i];
         const auto prefix=pairs.size()==1?std::string():"Pokemon "+std::to_string(i+1)+": ";
         EntryReview entry;
@@ -179,8 +188,10 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
         }
         for(const auto& note:entry.notes) result.notes.push_back(prefix+note);
         result.entries.push_back(std::move(entry));
-    }
-    if(!allReady) return result;
+
+            ++index;return false;
+        }
+        if(!allReady) {done=true;return true;}
     // Stage and reload each save only once. Release mutable destination before
     // source staging to reduce the physical DSi heap peak.
     std::vector<uint8_t> destinationAfter;
@@ -225,7 +236,27 @@ StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector
     result.destinationAfter=std::move(destinationAfter);
     result.converted=converted.front();result.convertedBatch=std::move(converted);
     result.ok=true;
-    return result;
+
+        done=true;return true;
+    }
+};
+BatchStage::BatchStage(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
+                       const std::vector<TransferPair>& pairs,uint8_t sourceLanguage)
+    :state_(new State(source,destination,pairs,sourceLanguage)) {}
+BatchStage::~BatchStage()=default;
+bool BatchStage::step(){return state_->step();}
+size_t BatchStage::completed() const{return state_->index;}
+size_t BatchStage::total() const{return state_->pairs.size();}
+const std::vector<EntryReview>& BatchStage::entries() const{return state_->result.entries;}
+StagedTransfer BatchStage::take(){
+    if(!state_->done) {StagedTransfer r;r.error="Batch not complete";return r;}
+    return std::move(state_->result);
+}
+StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
+                           const std::vector<TransferPair>& pairs,uint8_t sourceLanguage) {
+    BatchStage batch(source,destination,pairs,sourceLanguage);
+    while(!batch.step()) {}
+    return batch.take();
 }
 StagedTransfer stageCrystalToRuby(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
                                   BoxSlot from,BoxSlot to) {
