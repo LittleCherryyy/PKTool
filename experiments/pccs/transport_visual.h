@@ -177,9 +177,12 @@ inline Edition gbaHeader(const uint8_t* p,size_t n,bool japanese) {
     const char region=static_cast<char>(p[0xaf]);
     if(japanese?region!='J':std::string("EPFIDS").find(region)==std::string::npos) return Edition::Unknown;
     const std::string code(reinterpret_cast<const char*>(p+0xac),3);
-    if(code=="AXV")return Edition::Ruby;if(code=="AXP")return Edition::Sapphire;
-    if(code=="BPR")return Edition::FireRed;if(code=="BPG")return Edition::LeafGreen;
-    if(code=="BPE")return Edition::Emerald;return Edition::Unknown;
+    if(code=="AXV") return Edition::Ruby;
+    if(code=="AXP") return Edition::Sapphire;
+    if(code=="BPR") return Edition::FireRed;
+    if(code=="BPG") return Edition::LeafGreen;
+    if(code=="BPE") return Edition::Emerald;
+    return Edition::Unknown;
 }
 struct Resolution {
     std::vector<Edition> choices;
