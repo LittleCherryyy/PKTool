@@ -33,6 +33,27 @@ int main() {
     assert(v::spriteKind({E::Unknown,false})==nullptr);
     assert(v::spriteKind({E::Bank,false})==nullptr);
     assert(v::spriteKind({E::Bank,false},false,true)==nullptr);
+
+    // VPT032: precise transition boundaries, art swap and no cable overshoot.
+    using T=v::LinkStage;
+    assert(v::linkStage(0)==T::Departure&&v::linkStage(47)==T::Departure);
+    assert(v::linkStage(48)==T::Outbound&&v::linkStage(119)==T::Outbound);
+    assert(v::linkStage(120)==T::Transform&&v::linkStage(149)==T::Transform);
+    assert(v::linkStage(150)==T::Inbound&&v::linkStage(199)==T::Inbound);
+    assert(v::linkStage(200)==T::Arrival&&v::linkStage(239)==T::Arrival);
+    assert(!v::destinationArt(134)&&v::destinationArt(135));
+    assert(v::cableX(48)==92&&v::cableX(119)==128);
+    assert(v::cableX(150)==128&&v::cableX(199)==164);
+    assert(v::previewX(48)==52&&v::previewX(119)==128);
+    assert(v::previewX(150)==128&&v::previewX(199)==204);
+    for(uint32_t i=48;i<200;++i) {
+        assert(v::cableX(i)>=92&&v::cableX(i)<=164);
+        assert(v::previewX(i)>=52&&v::previewX(i)<=204);
+        if(v::linkStage(i)==T::Outbound) assert(!v::destinationArt(i));
+        if(v::linkStage(i)==T::Inbound) assert(v::destinationArt(i));
+        if(i>48&&v::linkStage(i)==T::Outbound) assert(v::cableX(i)>=v::cableX(i-1));
+        if(i>150&&v::linkStage(i)==T::Inbound) assert(v::cableX(i)>=v::cableX(i-1));
+    }
     assert(std::string(v::spriteKind({E::Blue,false}))==std::string(v::spriteKind({E::Red,false})));
     assert(std::string(v::spriteKind({E::Ruby,false}))!=std::string(v::spriteKind({E::Emerald,false})));
     assert(v::options(G::RedBlue,true).size()==3&&v::options(G::RedBlue,false).size()==2);
