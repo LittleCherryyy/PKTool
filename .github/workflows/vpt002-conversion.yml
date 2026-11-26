@@ -1,7 +1,7 @@
 name: VPT002 PCCS conversion probe
 on:
   push:
-    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history', 'dev/vpt030-link-experience', 'dev/vpt031-edition-sprites', 'dev/vpt032-link-transformer', 'dev/vpt033-render-memory']
+    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history', 'dev/vpt030-link-experience', 'dev/vpt031-edition-sprites', 'dev/vpt032-link-transformer', 'dev/vpt033-render-memory', 'dev/vpt034-visual-regression']
     paths: ['experiments/pccs/**', 'ds/app/**', 'ds/gfx/**', 'tests/test_transport_sprite_packs.cpp', 'tools/build_transport_sprites.py', '.github/workflows/vpt002-conversion.yml']
   workflow_dispatch:
 permissions:
