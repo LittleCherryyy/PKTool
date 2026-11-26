@@ -250,6 +250,8 @@ int main() {
         REQUIRE(stagedJp.ok);
         auto target=pk::pk3::toPokemon(stagedJp.converted.data(),80);
         REQUIRE(target.language==1&&target.nickname==mon.nickname&&target.trainer.name==trainer.name);
+        REQUIRE(stagedJp.converted[pk::pk3::offset::kOtName+5]==0xff);
+        REQUIRE(stagedJp.converted[pk::pk3::offset::kOtName+6]==0);
         REQUIRE(!br::stageGbBatch(jp->data(),originalD,{{{0,0},{0,0}}},2).ok);
     }
     REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},1).ok);

@@ -82,8 +82,10 @@ jobs:
           git clone --no-checkout https://github.com/kwsch/PKHeX.git "$RUNNER_TEMP/pkhex"
           git -C "$RUNNER_TEMP/pkhex" checkout --detach bfe89c74a3f5265805e364b79bc04ad38ebbc5ea
           test "$(git -C "$RUNNER_TEMP/pkhex" rev-parse HEAD)" = bfe89c74a3f5265805e364b79bc04ad38ebbc5ea
-      - name: Independent PKHeX audit (report-only until discrepancies reviewed)
+      - name: Independent PKHeX audit (strict regression gate)
+        shell: bash
         run: |
+          set -o pipefail
           PKHeXRoot="$RUNNER_TEMP/pkhex" dotnet run --project experiments/pccs/pkhex-audit/Audit.csproj -c Release -- "$RUNNER_TEMP/pk3-audit" | tee "$RUNNER_TEMP/pkhex-report.txt"
       - name: Preserve synthetic audit report
         if: always()

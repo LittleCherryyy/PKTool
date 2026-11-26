@@ -135,7 +135,14 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
         if(!rewriteName(nickOffset,pk3::offset::kNickname,5,10,original.nickname)) {
             result.error="Cannot preserve Japanese nickname";return result;
         }
-        result.notes.push_back("Japanese PK3 names use explicit terminator padding");
+        // Japanese GBA saves copy six bytes of trainer text (five
+        // characters + FF) and a zero byte, unlike international OT fields.
+        // PKHeX MiscVerifierG3.VerifyTrashJPN checks this exact pattern.
+        if(bytes[pk3::offset::kOtName+5]!=text::kGen3Terminator) {
+            result.error="Japanese OT terminator missing";return result;
+        }
+        bytes[pk3::offset::kOtName+6]=0;
+        result.notes.push_back("Japanese PK3 OT uses FF then zero padding");
     }
     // Independent PKTool at-rest encoding/decoding must round-trip.
     auto roundtrip = bytes;
