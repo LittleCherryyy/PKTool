@@ -22,7 +22,9 @@
 //   of the file (species s is bytes offsets[s]..offsets[s + 1], empty if equal),
 //   then the PKS1 blobs. The pack stays open, so a sprite costs one seek and
 //   one read instead of a file lookup among ~650 files (slow on a flashcart).
-// Kinds: "icons" (box icons), "front" and "front-shiny" (summary sprites).
+// Kinds: "icons" (box icons), "front" and "front-shiny" (summary sprites),
+// and optional "transport-*.pak" historical editions. Open pack handles are
+// bounded so visiting multiple editions does not exhaust libfat descriptors.
 namespace pktool::gfx {
 
 class SpriteStore {
@@ -65,8 +67,10 @@ private:
         std::FILE* file = nullptr;  // open for the store's lifetime
         std::vector<uint32_t> offsets;
         bool tried = false;
+        uint32_t lastUsed = 0;
     };
-    std::vector<Pack> packs_;  // by kind index
+    std::vector<Pack> packs_;  // by kind index; only a few file handles stay open
+    uint32_t packClock_ = 0;
 
     std::vector<std::string> directories_;
     int chosen_ = -2;  // -2 not searched yet, -1 none found
