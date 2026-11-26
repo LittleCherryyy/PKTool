@@ -2,6 +2,7 @@
 #include "stage_transfer.h"
 #include "core/pokemon/create4.h"
 #include "core/pokemon/pk2.h"
+#include "core/pokemon/pk1.h"
 #include "core/pokemon/pk3.h"
 #include "core/saves/save_commit.h"
 #include "tests/fake_gb_saves.h"
@@ -130,6 +131,48 @@ int main() {
         REQUIRE(left&&left->readBoxSlot(0,0,read.data())==sv::SlotState::Valid&&read[1]==item);
         REQUIRE(left->readPocket(pocket)[0].count==bagSave->itemMaxCount(pocket,item));
     }
+    // Reproduce the exact non-terminating upstream condition with actual
+    // Gen I/II save layouts and the real LEGAL converter, including Red -> Emerald.
+    for(uint8_t generation:{1,2}) {
+        for(uint16_t exp:{0,254,255,256,257,65535}) {
+            auto gb=sv::loadSaveFile(generation==1?fakegb::blankGen1(false,false):fakegb::blankGen2(fakegb::kGen2Gs));
+            auto emerald=sv::loadSaveFile(fake::blankGen3(sv::Game::Emerald));
+            REQUIRE(gb&&emerald);
+            pk::create4::Trainer t;
+            t.name="ASH";t.tid=12345;t.version=gb->gameVersion();t.language=2;
+            auto mon=pk::create4::newPokemon(t,generation==1?1:155,5,255);
+            mon.heldItem=0;
+            std::array<uint8_t,pk::entity::kMaxPartySize> raw{};
+            pk::create4::encode(mon,raw.data());
+            const auto offset=generation==1?pk::pk1::offset::kStatExp:pk::pk2::offset::kStatExp;
+            for(size_t i=0;i<5;++i) {
+                raw[offset+2*i]=static_cast<uint8_t>(exp>>8);
+                raw[offset+2*i+1]=static_cast<uint8_t>(exp);
+            }
+            REQUIRE(gb->writeBoxSlot(0,0,raw.data()));gb->refreshChecksums();
+            const auto before=gb->data(),targetBefore=emerald->data();
+            auto stage=br::stageGbBatch(before,targetBefore,{{{0,0},{0,0}}});
+            if(!stage.ok) {
+                std::fprintf(stderr,"StatExp %u Gen %u: %s\n",exp,generation,stage.error.c_str());
+                for(const auto& n:stage.notes) std::fprintf(stderr,"%s\n",n.c_str());
+            }
+            REQUIRE(stage.ok&&gb->data()==before&&emerald->data()==targetBefore);
+            auto dest=sv::loadSaveFile(stage.destinationAfter),src=sv::loadSaveFile(stage.sourceAfter);
+            REQUIRE(dest&&src&&sv::validateSave(*dest)&&sv::validateSave(*src));
+            REQUIRE(src->readBoxSlot(0,0,read.data())==sv::SlotState::Empty);
+            REQUIRE(dest->readBoxSlot(0,0,read.data())==sv::SlotState::Valid);
+            const auto p=pk::pk3::toPokemon(read.data(),80);
+            REQUIRE(p.species==mon.species);
+            unsigned sum=0;
+            for(auto ev:p.evs) {
+                sum+=ev;
+                if(exp==255||exp==254||exp==256||exp==257) REQUIRE(ev==16);
+                if(exp==0) REQUIRE(ev==0);
+            }
+            REQUIRE(sum<=510);
+        }
+    }
+    std::puts("PASS: Gen I/II Stat Exp 0,254,255,256,257,65535 -> Emerald; exact EV regression");
     // Same western save geometry, language explicitly supplied by user.
     for(uint8_t lang:{2,3,4,5,7}) {
         auto multilingual=br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},lang);

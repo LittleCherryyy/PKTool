@@ -20,6 +20,7 @@ jobs:
       - name: Build upstream host library and data tables
         run: |
           python3 experiments/pccs/fix_upstream_charset.py "$RUNNER_TEMP/pccs"
+          python3 experiments/pccs/fix_upstream_statexp.py "$RUNNER_TEMP/pccs"
           make -C "$RUNNER_TEMP/pccs" -j2
       - name: Build PKTool portable core
         run: |

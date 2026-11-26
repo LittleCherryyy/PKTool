@@ -12,8 +12,9 @@ git clone --no-checkout https://github.com/Striaton-Lab-Team/Pokemon-Community-C
 git -C "$work/pccs" checkout --detach "$pin"
 test "$(git -C "$work/pccs" rev-parse HEAD)" = "$pin"
 python3 experiments/pccs/fix_upstream_charset.py "$work/pccs"
+python3 experiments/pccs/fix_upstream_statexp.py "$work/pccs"
 # Build uncompressed, host-generated tables; do not use PCCS's ARMv4T/GBA
-# compressed-table path on ARM9. Only the separately documented charset index fix is applied.
+# compressed-table path on ARM9. Apply the documented charset and Stat Exp fixes.
 make -C "$work/pccs" -j2 CXX=c++ CC=cc AR=ar
 mkdir -p "$work/arm9/lib" "$work/arm9/include" "$work/obj"
 cp "$work/pccs/include/"*.h "$work/arm9/include/"
@@ -46,7 +47,7 @@ p = pathlib.Path("ds/main.cpp")
 s = p.read_text()
 a = "int main() {"
 assert s.count(a) == 1
-p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("config.storageReady = fatInitDefault();", "config.storageReady = fatInitDefault();\n    config.transporterPreview = isDSiMode();\n    if (config.transporterPreview) {\n        config.scanRoot = \"sd:/\";\n        config.dataDir = \"sd:/PKTOOL\";\n    }\n    config.version = \"VPT021-candidate\";"))
+p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("config.storageReady = fatInitDefault();", "config.storageReady = fatInitDefault();\n    config.transporterPreview = isDSiMode();\n    if (config.transporterPreview) {\n        config.scanRoot = \"sd:/\";\n        config.dataDir = \"sd:/PKTOOL\";\n    }\n    config.version = \"VPT022-candidate\";"))
 pathlib.Path("ds/vpt_arm9_bridge.cpp").write_text('#include "../experiments/pccs/pccs_bridge.cpp"\n')
 pathlib.Path("ds/vpt_arm9_stage.cpp").write_text('#include "../experiments/pccs/stage_transfer.cpp"\n')
 pathlib.Path("ds/vpt_arm9_journal.cpp").write_text('#include "../experiments/pccs/transfer_journal.cpp"\n')
