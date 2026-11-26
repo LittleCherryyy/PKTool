@@ -179,3 +179,21 @@ time**; they are not present in a plain checkout unless generated. Animation
 cable motion/transformer, real hardware appearance, DS memory and frame-rate
 are still pending VPT032+ validation. No newly linked PCCS binary may be
 distributed until its separate license status is resolved.
+
+## VPT032: actual Link-cable sprite transit and centre transformer
+On the existing 240 frames per Pokémon, the source-edition sprite stays in
+its original console through frame 47, travels left-to-centre on frames 48–119,
+enters a 30-frame transformer flash at the cable midpoint (frames 120–149),
+emerges as the confirmed destination-edition art at frame 135, traverses
+centre-to-right on frames 150–199 and appears inside the receiving GBA through
+frame 239. The lower screen shows a larger version of the same source/target
+art and trajectory, not a Poké Ball proxy. This timing is purely visual:
+A/START still skips the animation, and existing review/journal/save checks
+control every write exactly as before.
+
+Pure timeline tests enforce stage boundaries, centre pixel positions and
+direction; host end-to-end UI/transaction regression and ARM9 link continue
+as build gates. The hand-drawn console silhouettes and centre transformer
+are not cartridge screenshots or copied Nintendo console assets. In-game DSi
+appearance, exact timing at physical frame rate and the full sprite library
+are not yet independently hardware tested.
