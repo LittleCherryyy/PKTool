@@ -41,28 +41,45 @@ int SpriteStore::kindIndex(const char* kind) {
 
 Image SpriteStore::get(const char* kind, uint16_t species) {
     // Called for every icon of every frame: the lookup must not build strings or allocate.
-    const uint32_t id = (static_cast<uint32_t>(kindIndex(kind)) << 16) | species;
+    const int kindId = kindIndex(kind);
+    const uint32_t id = (static_cast<uint32_t>(kindId) << 16) | species;
     auto it = cache_.find(id);
     if (it != cache_.end()) {
         recent_.splice(recent_.begin(), recent_, it->second.recent);
     } else {
+        Entry entry;
+        std::vector<uint8_t> bytes;
+        const std::string* dir = directory();
+        // A packed miss may be supplied as a loose override on SD.
         const std::string key = std::string(kind) + "/" + std::to_string(species);
-        while (!recent_.empty() && (cache_.size() >= kMaxCachedSprites || cachedBytes_ >= kMaxCachedBytes)) {
-            auto oldest = cache_.find(recent_.back());
+        bool loaded = false;
+        if (dir != nullptr) {
+            loaded = readPacked(kindId, species, bytes) && !bytes.empty();
+            if (!loaded) {
+                for (const auto& candidate : directories_) {
+                    if (io::readFile(io::joinPath(candidate, key + ".bin"), bytes)) {
+                        loaded = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (loaded && !parse(bytes, entry.width, entry.height, entry.pixels))
+            entry.pixels.clear();
+
+        // The exact budget applies to the *new* decoded image as well. The
+        // old pre-insertion check could overshoot 128 KiB on every load.
+        const size_t incoming = entry.pixels.size() * sizeof(uint16_t);
+        while (!recent_.empty() &&
+               (cache_.size() >= kMaxCachedSprites ||
+                incoming > kMaxCachedBytes - cachedBytes_)) {
+            const uint32_t oldestId = recent_.back();
+            const auto oldest = cache_.find(oldestId);
             cachedBytes_ -= oldest->second.pixels.size() * sizeof(uint16_t);
             cache_.erase(oldest);
             recent_.pop_back();
         }
-        Entry entry;
-        std::vector<uint8_t> bytes;
-        const std::string* dir = directory();
-        if (dir != nullptr && (readPacked(kindIndex(kind), species, bytes) ||
-                               io::readFile(io::joinPath(*dir, key + ".bin"), bytes))) {
-            if (!parse(bytes, entry.width, entry.height, entry.pixels)) {
-                entry.pixels.clear();
-            }
-        }
-        cachedBytes_ += entry.pixels.size() * sizeof(uint16_t);
+        cachedBytes_ += incoming;
         recent_.push_front(id);
         entry.recent = recent_.begin();
         it = cache_.emplace(id, std::move(entry)).first;
@@ -90,10 +107,21 @@ const std::string* SpriteStore::directory() {
     return chosen_ >= 0 ? &directories_[chosen_] : nullptr;
 }
 
-SpriteStore::~SpriteStore() {
+void SpriteStore::clear() {
+    cache_.clear();
+    recent_.clear();
+    cachedBytes_ = 0;
     for (Pack& pack : packs_) {
         if (pack.file != nullptr) std::fclose(pack.file);
+        pack.file = nullptr;
     }
+    packs_.clear();  // release decoded indexes too, not only FILE* objects
+    packClock_ = 0;
+    chosen_ = -2;
+}
+
+SpriteStore::~SpriteStore() {
+    clear();
 }
 
 bool SpriteStore::readPacked(int kind, uint16_t species, std::vector<uint8_t>& bytes) {
