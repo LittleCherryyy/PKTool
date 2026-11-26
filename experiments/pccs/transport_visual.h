@@ -100,6 +100,29 @@ inline const char* spriteKind(SpriteSet set,bool shiny=false) {
 inline const char* spriteKind(VisualEdition edition,bool shiny=false,bool destination=false) {
     return spriteKind(spriteSet(edition,destination),shiny);
 }
+// Frame-exact, 240-frame (per Pokemon) Link experience. The two halves of
+// the cable use different sprites; a brief centre flash changes their art.
+// These are visual frames only and never influence transaction timing.
+enum class LinkStage : uint8_t { Departure, Outbound, Transform, Inbound, Arrival };
+constexpr LinkStage linkStage(uint32_t frame) {
+    return frame<48?LinkStage::Departure:
+           frame<120?LinkStage::Outbound:
+           frame<150?LinkStage::Transform:
+           frame<200?LinkStage::Inbound:LinkStage::Arrival;
+}
+constexpr bool destinationArt(uint32_t frame) {
+    return frame>=135;  // midpoint of the 30-frame transformer flash
+}
+// Top-screen sprite centre while on the 72 px cable, never outside 92..164.
+constexpr int cableX(uint32_t frame) {
+    return frame<48?92:frame<120?92+static_cast<int>((frame-48)*36/71):
+           frame<150?128:frame<200?128+static_cast<int>((frame-150)*36/49):164;
+}
+// Bottom-screen preview traverses a wider representation of the same cable.
+constexpr int previewX(uint32_t frame) {
+    return frame<48?52:frame<120?52+static_cast<int>((frame-48)*76/71):
+           frame<150?128:frame<200?128+static_cast<int>((frame-150)*76/49):204;
+}
 inline std::vector<Edition> options(saves::Game g,bool japanese) {
     using G=saves::Game;using E=Edition;
     switch(g) {
