@@ -1,7 +1,7 @@
 name: VPT002 PCCS conversion probe
 on:
   push:
-    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history', 'dev/vpt030-link-experience', 'dev/vpt031-edition-sprites', 'dev/vpt032-link-transformer', 'dev/vpt033-render-memory', 'dev/vpt034-visual-regression']
+    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history', 'dev/vpt030-link-experience', 'dev/vpt031-edition-sprites', 'dev/vpt032-link-transformer', 'dev/vpt033-render-memory', 'dev/vpt034-visual-regression', 'dev/vpt035-private-test-build']
     paths: ['experiments/pccs/**', 'ds/app/**', 'ds/gfx/**', 'tests/test_transport_sprite_packs.cpp', 'tools/build_transport_sprites.py', '.github/workflows/vpt002-conversion.yml']
   workflow_dispatch:
 permissions:
@@ -12,6 +12,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+      - name: Check VPT035 private builder refuses CI and uploads nothing
+        run: |
+          bash -n experiments/pccs/build_private_candidate.sh
+          if CI=true DEVKITARM=/no-compiler bash experiments/pccs/build_private_candidate.sh "$RUNNER_TEMP/never.nds"; then
+            echo "ERROR: private builder unexpectedly ran in CI"; exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/never.nds"
       - name: Fetch pinned upstream library (test-only, no distribution)
         run: |
           git clone --no-checkout https://github.com/Striaton-Lab-Team/Pokemon-Community-Conversion-Standard.git "$RUNNER_TEMP/pccs"
