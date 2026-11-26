@@ -41,11 +41,16 @@ public:
 
     bool available();  // true if any directory contains the sprite pack
 
-    // Frees every cached sprite (e.g. to make room before writing a save).
-    void clear() {
-        cache_.clear();
-        recent_.clear();
-        cachedBytes_ = 0;
+    // Frees decoded sprites AND closes pack handles before save writes.
+    // The pack directory/index can be rediscovered on the next get().
+    void clear();
+
+    // Lightweight diagnostics; no file reads or allocations.
+    size_t cachedPixelBytes() const { return cachedBytes_; }
+    size_t openPackCount() const {
+        size_t result = 0;
+        for (const Pack& pack : packs_) if (pack.file != nullptr) ++result;
+        return result;
     }
 
     // Parses a sprite file's contents (exposed for tests).
