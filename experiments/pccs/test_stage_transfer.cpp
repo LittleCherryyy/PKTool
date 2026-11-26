@@ -268,12 +268,13 @@ int main() {
         std::array<uint8_t,pk::entity::kMaxPartySize> native{};
         pk::create4::encode(pk::create4::newPokemon(t,1,5,255),native.data());
         REQUIRE(bank.set(0,0,1,native.data()));
-        t.version=g2->gameVersion();t.language=3;t.name="ÉRIC";
+        t.version=g2->gameVersion();t.language=3;t.name="René";
         auto mon=pk::create4::newPokemon(t,155,5,255);
         // GB creator defaults western games to English; a native Bank fixture
         // must carry its actual language explicitly, unlike save-level hint.
-        mon.language=3;mon.nickname="ÉCLAIR";mon.heldItem=0;
+        mon.language=3;mon.nickname="éclair";mon.heldItem=0;
         pk::create4::encode(mon,native.data());native[1]=0;
+        REQUIRE(pk::pk2::toPokemon(native.data(),pk::pk2::kEntitySize).trainer.name==t.name);
         REQUIRE(bank.set(0,1,2,native.data()));
         native[1]=1;REQUIRE(bank.set(0,2,2,native.data()));
         REQUIRE(bank.setBoxName(0,"Classic"));
@@ -302,15 +303,21 @@ int main() {
             auto gb=sv::loadSaveFile(gen==1?fakegb::blankGen1(lang==1,false):
                 fakegb::blankGen2(lang==1?fakegb::kGen2CrystalJpn:fakegb::kGen2Gs));
             REQUIRE(gb);
-            pk::create4::Trainer t;t.name=lang==1?"アッシュ":lang==3?"ÉRIC":lang==5?"JÖRG":lang==7?"PEÑA":"ASH";
+            pk::create4::Trainer t;t.name=lang==1?"アッシュ":lang==3?(gen==1?"ÉRIC":"René"):lang==5?"JÖRG":lang==7?"PEÑA":"ASH";
             t.tid=12345;t.version=gb->gameVersion();t.language=lang;
             auto mon=pk::create4::newPokemon(t,gen==1?1:155,5,255);
-            mon.heldItem=0;
+            mon.heldItem=0;mon.language=lang;
             if(lang==1) mon.nickname=gen==1?"フシギダネ":"ヒノアラシ";
-            else mon.nickname=lang==3?"ÉCLAIR":lang==5?"BÄR":lang==7?"NIÑO":"BUDDY";
+            else mon.nickname=lang==3?(gen==1?"ÉCLAIR":"éclair"):lang==5?"BÄR":lang==7?"NIÑO":"BUDDY";
             std::array<uint8_t,pk::entity::kMaxPartySize> raw{};
             pk::create4::encode(mon,raw.data());
+            const auto encoded=pk::entity::decode(gen,raw.data(),pk::entity::storedSize(gen));
+            REQUIRE(encoded.language==lang&&encoded.nickname==mon.nickname&&encoded.trainer.name==t.name);
             REQUIRE(gb->writeBoxSlot(0,0,raw.data()));gb->refreshChecksums();
+            REQUIRE(gb->readBoxSlot(0,0,raw.data())==sv::SlotState::Valid);
+            raw[gen==1?pk::pk1::kLanguageOffset:pk::pk2::kLanguageOffset]=lang;
+            const auto reloaded=pk::entity::decode(gen,raw.data(),pk::entity::storedSize(gen));
+            REQUIRE(reloaded.nickname==mon.nickname&&reloaded.trainer.name==t.name);
             int family=0;
             for(auto game:{sv::Game::RubySapphire,sv::Game::Emerald,sv::Game::FireRedLeafGreen}) {
                 const auto name=std::string(audit)+"/g"+std::to_string(gen)+"-lang"+std::to_string(lang)+"-dest"+std::to_string(++family);
