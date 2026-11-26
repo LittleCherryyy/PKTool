@@ -150,6 +150,64 @@ int main() {
         REQUIRE(!io::fileExists(ga+".vpt-old")&&!io::fileExists(eb+".vpt-old"));
         std::puts("PASS: Gold to Emerald batch UI, exact order, source compaction, commit and restart/archive");
     }
+    // VPT021: mixed review, explicit X ready-only, exact source Bag commit.
+    {
+        const auto mixedRoot=root+"/mixed";
+        REQUIRE(io::makeDirectories(mixedRoot));
+        auto gs=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Gs));
+        auto rb=sv::loadSaveFile(fake::blankGen3(sv::Game::RubySapphire));
+        REQUIRE(gs&&rb);
+        const uint16_t item=0x12;
+        int pocket=-1;
+        for(int p=0;p<4;++p) if(gs->pocketAllows(p,item)) {pocket=p;break;}
+        REQUIRE(pocket>=0);
+        const auto limit=static_cast<uint16_t>(gs->itemMaxCount(pocket,item));
+        REQUIRE(gs->setPocket(pocket,{{item,static_cast<uint16_t>(limit-1)}}));
+        tr.version=39;
+        const uint16_t species[]={155,158,152};
+        for(int i=0;i<3;++i) {
+            auto mon=pk::create4::newPokemon(tr,species[i],5,100+species[i]);
+            pk::create4::encode(mon,raw.data());raw[1]=i<2?item:0;
+            REQUIRE(gs->writeBoxSlot(0,i,raw.data()));
+        }
+        gs->refreshChecksums();rb->refreshChecksums();
+        const auto ms=gs->data(),md=rb->data();
+        const auto ga=mixedRoot+"/silver.sav",eb=mixedRoot+"/ruby.sav";
+        ui::Config mc=cfg;mc.scanRoot=mixedRoot;mc.dataDir=mixedRoot+"/PKTOOL";
+        const auto mj=mc.dataDir+"/transporter/active.vpt";
+        REQUIRE(put(ga,ms)&&put(eb,md));
+        {
+            ui::App app(mc);
+            press(app,ui::kKeyY);press(app,ui::kKeyA);
+            press(app,ui::kKeyX);press(app,ui::kKeyDown);press(app,ui::kKeyX);
+            press(app,ui::kKeyDown);press(app,ui::kKeyX);
+            press(app,ui::kKeyA);press(app,ui::kKeyA);press(app,ui::kKeyA);
+            // Mixed results must never authorize the original batch.
+            press(app,ui::kKeyStart);press(app,ui::kKeyStart);press(app,ui::kKeyA);
+            REQUIRE(same(ga,ms)&&same(eb,md)&&!io::fileExists(mj));
+            press(app,ui::kKeyX); // explicitly re-review the ready subset
+            REQUIRE(same(ga,ms)&&same(eb,md)&&!io::fileExists(mj));
+            press(app,ui::kKeyStart);press(app,ui::kKeyStart);
+            REQUIRE(same(ga,ms)&&same(eb,md)&&!io::fileExists(mj));
+            press(app,ui::kKeyA);
+            REQUIRE(std::string(app.screenName())=="TransferRecovery");
+            REQUIRE(br::inspectActiveJournal(mj).state==br::StartupState::Completed);
+            REQUIRE(press(app,ui::kKeyA));
+            REQUIRE(std::string(app.screenName())=="Home");
+        }
+        std::vector<uint8_t> ss,dd;
+        REQUIRE(io::readFile(ga,ss)&&io::readFile(eb,dd));
+        auto src=sv::loadSaveFile(ss),dst=sv::loadSaveFile(dd);
+        REQUIRE(src&&dst&&sv::validateSave(*src)&&sv::validateSave(*dst));
+        REQUIRE(src->readBoxSlot(0,0,raw.data())==sv::SlotState::Valid && raw[0]==158&&raw[1]==item);
+        REQUIRE(src->readBoxSlot(0,1,raw.data())==sv::SlotState::Empty);
+        REQUIRE(src->readPocket(pocket).size()==1&&src->readPocket(pocket)[0].count==limit);
+        REQUIRE(dst->readBoxSlot(0,0,raw.data())==sv::SlotState::Valid&&pk::pk3::toPokemon(raw.data(),80).species==155);
+        REQUIRE(pk::pk3::toPokemon(raw.data(),80).heldItem==0);
+        REQUIRE(dst->readBoxSlot(0,1,raw.data())==sv::SlotState::Empty);
+        REQUIRE(dst->readBoxSlot(0,2,raw.data())==sv::SlotState::Valid&&pk::pk3::toPokemon(raw.data(),80).species==152);
+        std::puts("PASS: Silver to Ruby mixed review, explicit X subset, item returned to Bag, blocked Pokemon retained");
+    }
     // Verify the startup UI refuses a partially created journal too.
     REQUIRE(put(j+".new",{1,2,3}));
     ui::App locked(cfg);REQUIRE(std::string(locked.screenName())=="TransferRecovery");
