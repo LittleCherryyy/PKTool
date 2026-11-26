@@ -2,7 +2,7 @@ name: VPT029 final individual test build
 on:
   push:
     branches: ['test/vpt029-final-individual-build']
-    paths: ['.github/workflows/vpt029-individual-build.yml']
+    paths: ['.github/workflows/vpt029-final-individual-build.yml']
 permissions:
   contents: read
 jobs:
