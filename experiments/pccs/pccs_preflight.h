@@ -7,7 +7,7 @@ namespace pktool::pokemon::pccs_bridge {
 enum class Preflight { Ready, InvalidSize, UnsupportedLanguage, Egg,
                        InvalidSpecies, HeldItem, Mythical, InvalidLevel };
 inline bool supportedLanguage(uint8_t lang) {
-    return lang>=1 && lang<=5 || lang==7;
+    return (lang>=1 && lang<=5) || lang==7;
 }
 inline Preflight preflight(const uint8_t* data, std::size_t size) {
     if (!data || size != 72) return Preflight::InvalidSize;

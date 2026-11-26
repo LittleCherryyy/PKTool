@@ -101,6 +101,22 @@ int main() {
         REQUIRE(multilingual.ok);
         REQUIRE(pk::pk3::toPokemon(multilingual.converted.data(),80).language==lang);
     }
+    for(uint8_t version:{35,41}) {
+        auto jp=sv::loadSaveFile(version==35?fakegb::blankGen1(true,false):fakegb::blankGen2(fakegb::kGen2CrystalJpn));
+        REQUIRE(jp&&jp->language()==1);
+        trainer.version=version;trainer.language=1;trainer.name="アッシュ";
+        auto mon=pk::create4::newPokemon(trainer,version==35?1:155,5,255);
+        mon.heldItem=0;mon.nickname=version==35?"フシギダネ":"ヒノアラシ";
+        std::array<uint8_t,pk::entity::kMaxPartySize> raw{};
+        pk::create4::encode(mon,raw.data());
+        REQUIRE(jp->writeBoxSlot(0,0,raw.data()));jp->refreshChecksums();
+        auto stagedJp=br::stageGbBatch(jp->data(),originalD,{{{0,0},{0,0}}},1);
+        if(!stagedJp.ok) {std::fprintf(stderr,"Japanese %u: %s\n",version,stagedJp.error.c_str());for(auto& n:stagedJp.notes)std::fprintf(stderr,"%s\n",n.c_str());}
+        REQUIRE(stagedJp.ok);
+        auto target=pk::pk3::toPokemon(stagedJp.converted.data(),80);
+        REQUIRE(target.language==1&&target.nickname==mon.nickname&&target.trainer.name==trainer.name);
+        REQUIRE(!br::stageGbBatch(jp->data(),originalD,{{{0,0},{0,0}}},2).ok);
+    }
     REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},1).ok);
     REQUIRE(!br::stageGbBatch(originalS,originalD,{{{0,1},{0,5}}},8).ok);
     REQUIRE(!br::stageCrystalToRuby(std::vector<uint8_t>{1,2,3},originalD,{0,1},{0,5}).ok);

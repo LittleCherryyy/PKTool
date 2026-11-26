@@ -312,8 +312,24 @@ void App::updateTransporter(const Input& in) {
     int count=static_cast<int>(transportRows_.size());
     if(in.repeated&kKeyUp) transportCursor_=wrap(transportCursor_-1,count);
     if(in.repeated&kKeyDown) transportCursor_=wrap(transportCursor_+1,count);
-    if(in.repeated&kKeyL) transportCursor_=clampInt(transportCursor_-7,0,std::max(0,count-1));
-    if(in.repeated&kKeyR) transportCursor_=clampInt(transportCursor_+7,0,std::max(0,count-1));
+    if(transportPhase_==TransportPhase::DestinationSlot&&count>0) {
+        const auto here=transportPositions_[transportCursor_];
+        const int delta=(in.repeated&kKeyR)?1:(in.repeated&kKeyL)?-1:0;
+        if(delta) {
+            int chosen=transportCursor_;
+            if(delta>0) {
+                for(int i=transportCursor_+1;i<count;++i) if(transportPositions_[i].first>here.first) {chosen=i;break;}
+            } else {
+                for(int i=transportCursor_-1;i>=0;--i) if(transportPositions_[i].first<here.first) {chosen=i;break;}
+            }
+            transportCursor_=chosen;
+        }
+        if(in.repeated&kKeyLeft) transportCursor_=wrap(transportCursor_-1,count);
+        if(in.repeated&kKeyRight) transportCursor_=wrap(transportCursor_+1,count);
+    } else {
+        if(in.repeated&kKeyL) transportCursor_=clampInt(transportCursor_-7,0,std::max(0,count-1));
+        if(in.repeated&kKeyR) transportCursor_=clampInt(transportCursor_+7,0,std::max(0,count-1));
+    }
     bool activate=in.pressed&kKeyA;
     int zone=in.touched?touchedZone(in):-1;
     if(zone>=kZoneItem && zone<kZoneItem+count) {

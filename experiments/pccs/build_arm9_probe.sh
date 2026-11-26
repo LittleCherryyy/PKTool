@@ -51,6 +51,9 @@ pathlib.Path("ds/vpt_arm9_stage.cpp").write_text('#include "../experiments/pccs/
 pathlib.Path("ds/vpt_arm9_journal.cpp").write_text('#include "../experiments/pccs/transfer_journal.cpp"\n')
 pathlib.Path("ds/vpt_arm9_probe.cpp").write_text(pathlib.Path("experiments/pccs/arm9_probe.cpp").read_text())
 PY
+# Pinned historical art packs, streamed from the same PokeAPI sprite source
+# as the base editor; no persistent extra runtime memory for the whole pack.
+python3 tools/build_transport_sprites.py assets/nitrofs/sprites
 make -j2
 "$arm-size" PKTool.elf
 "$arm-nm" -C PKTool.elf > "$work/symbols"
