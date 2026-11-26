@@ -101,26 +101,57 @@ bool SpriteStore::readPacked(int kind, uint16_t species, std::vector<uint8_t>& b
     Pack& pack = packs_[static_cast<size_t>(kind)];
     if (!pack.tried) {
         pack.tried = true;
-        const std::string* dir = directory();
-        if (dir == nullptr) return false;
-        std::FILE* f = std::fopen(io::joinPath(*dir, kinds_[static_cast<size_t>(kind)] + ".pak").c_str(), "rb");
-        uint8_t header[8];
-        if (f != nullptr && std::fread(header, 1, sizeof header, f) == sizeof header && header[0] == 'P' &&
-            header[1] == 'K' && header[2] == 'S' && header[3] == 'P') {
-            const size_t count = util::readU16(header + 4);
-            std::vector<uint8_t> table((count + 2) * 4);
-            if (std::fread(table.data(), 1, table.size(), f) == table.size()) {
-                pack.offsets.resize(count + 2);
-                for (size_t i = 0; i < pack.offsets.size(); ++i) pack.offsets[i] = util::readU32(&table[i * 4]);
-                pack.file = f;
-                f = nullptr;
-            }
+        if (directory() == nullptr) return false;
+        // An older NitroFS image may have basic icons but not the optional
+        // edition art. Search each directory for this specific pack, in order.
+        for (const auto& dir : directories_) {
+            const auto path = io::joinPath(dir, kinds_[static_cast<size_t>(kind)] + ".pak");
+            if (io::fileExists(path)) { pack.path = path; break; }
         }
-        if (f != nullptr) std::fclose(f);
     }
-    if (pack.file == nullptr) return false;
+    if (pack.path.empty()) return false;
+    if (pack.file == nullptr) {
+        // Switching among editions must not leave one open FILE* per kind.
+        // Keep four (source, destination, shiny and one fallback) and reuse
+        // the parsed index when an older pack is reopened.
+        constexpr size_t kMaxOpenPacks = 4;
+        size_t open = 0;
+        size_t oldest = packs_.size();
+        for (size_t i = 0; i < packs_.size(); ++i) {
+            if (!packs_[i].file) continue;
+            ++open;
+            if (i != static_cast<size_t>(kind) &&
+                (oldest == packs_.size() || packs_[i].lastUsed < packs_[oldest].lastUsed))
+                oldest = i;
+        }
+        if (open >= kMaxOpenPacks && oldest != packs_.size()) {
+            std::fclose(packs_[oldest].file);
+            packs_[oldest].file = nullptr;
+        }
+        std::FILE* file = std::fopen(pack.path.c_str(), "rb");
+        if (file == nullptr) return false;
+        if (pack.offsets.empty()) {
+            uint8_t header[8];
+            if (std::fread(header, 1, sizeof header, file) != sizeof header ||
+                header[0] != 'P' || header[1] != 'K' ||
+                header[2] != 'S' || header[3] != 'P') {
+                std::fclose(file); return false;
+            }
+            const size_t count = util::readU16(header + 4);
+            if (count > 2048) { std::fclose(file); return false; }
+            std::vector<uint8_t> table((count + 2) * 4);
+            if (std::fread(table.data(), 1, table.size(), file) != table.size()) {
+                std::fclose(file); return false;
+            }
+            pack.offsets.resize(count + 2);
+            for (size_t i = 0; i < pack.offsets.size(); ++i)
+                pack.offsets[i] = util::readU32(&table[i * 4]);
+        }
+        pack.file = file;
+    }
+    pack.lastUsed = ++packClock_;
     bytes.clear();
-    if (species + 1u >= pack.offsets.size()) return true;  // packed kind without this species
+    if (species + 1u >= pack.offsets.size()) return true;
     const uint32_t begin = pack.offsets[species];
     const uint32_t end = pack.offsets[species + 1u];
     if (end <= begin || end - begin > 8 + 2u * kMaxDimension * kMaxDimension) return true;
