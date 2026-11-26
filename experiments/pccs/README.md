@@ -242,3 +242,18 @@ battery/power-loss resilience or exact hardware frame cadence.
 VPT034 continues to require the original PCCS conversion/PKHeX host suite,
 the normal sanitizer build and the experimental ARM9 link. Do not release a
 PCCS-linked NDS until separate redistribution permission is established.
+
+## VPT035: disposable private ARM9 candidate
+The VPT035 isolated build helper is `experiments/pccs/build_private_candidate.sh`.
+It archives the exact checked-out branch commit into a new temporary directory,
+uses the same pinned PCCS build and complete ARM9 UI as the tested CI probe,
+verifies the write-enabled transporter symbol, and copies only `PKTool.nds`
+to a requested local path. The helper refuses CI runs and refuses output
+overwrites. No PCCS-linked object or binary is uploaded by any workflow.
+The normal CI `PKTool.nds` artifact still lacks the experimental transporter.
+
+See `experiments/pccs/VPT035_HARDWARE_TEST.md` for private build commands,
+DSi internal SD and DSi-mode requirements, first disposable Crystal->Ruby test,
+animation/commit/archive sequence, and what to preserve if recovery is blocked.
+Build-only success and host pixel tests do not substitute for physical hardware
+confirmation or independent PCCS redistribution permission.
