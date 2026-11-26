@@ -27,6 +27,29 @@ void pktool::test::reportFailure(const char* f,int l,const char* e) {
 #define REQUIRE(x) do {if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);return 1;}}while(0)
 bool put(const std::string& p,const std::vector<uint8_t>& b){return io::safeWriteFile(p,b)==io::WriteResult::Ok;}
 bool same(const std::string& p,const std::vector<uint8_t>& b){std::vector<uint8_t> a;return io::readFile(p,a)&&a==b;}
+
+std::vector<uint8_t> syntheticArtPack(uint16_t species,uint16_t color) {
+    constexpr int side=16;
+    const uint16_t count=species;
+    const uint32_t header=8+4*(static_cast<uint32_t>(count)+2);
+    const uint32_t body=8+side*side*2;
+    std::vector<uint8_t> pack={'P','K','S','P',
+        static_cast<uint8_t>(count),static_cast<uint8_t>(count>>8),0,0};
+    for(uint32_t i=0;i<static_cast<uint32_t>(count)+2;++i) {
+        const uint32_t offset=header+(i>species?body:0);
+        for(int j=0;j<4;++j) pack.push_back(static_cast<uint8_t>(offset>>(8*j)));
+    }
+    pack.insert(pack.end(),{'P','K','S','1',side,0,side,0});
+    for(int i=0;i<side*side;++i) {
+        pack.push_back(static_cast<uint8_t>(color));
+        pack.push_back(static_cast<uint8_t>(color>>8));
+    }
+    return pack;
+}
+size_t countColor(const std::array<uint16_t,256*192>& buffer,uint16_t color) {
+    return static_cast<size_t>(std::count(buffer.begin(),buffer.end(),color));
+}
+
 bool pressRaw(ui::App& app,uint32_t key) {
     static std::array<uint16_t,256*192> top{},bottom{};
     bool running=app.update({key,key,false,0,0});
@@ -404,6 +427,49 @@ int main() {
         ui::App fresh(ec);pressRaw(fresh,ui::kKeyY);pressRaw(fresh,ui::kKeyA);
         REQUIRE(fresh.transporterChoosingEdition());
         pressRaw(fresh,ui::kKeyB);REQUIRE(!fresh.transporterChoosingEdition()&&fresh.transporterRows().size()==1);
+    }
+    // VPT034 end-to-end visual regression. The art packs use different solid
+    // synthetic colors, so a pixel readback proves that the *actual* edition
+    // sprite changes at the centre instead of a Pokeball proxy. Every frame
+    // before the final commit must leave both files byte-for-byte unchanged.
+    {
+        const auto visualRoot=root+"/visual";
+        const auto art=visualRoot+"/art";
+        REQUIRE(io::makeDirectories(visualRoot));
+        REQUIRE(io::makeDirectories(art+"/icons"));
+        const auto source=visualRoot+"/crystal.sav",destination=visualRoot+"/ruby.sav";
+        REQUIRE(put(source,sb)&&put(destination,db));
+        REQUIRE(put(art+"/icons/25.bin",{'P','K','S','1',1,0,1,0,1,0x80}));
+        constexpr uint16_t species=155;
+        const uint16_t srcColor=gfx::rgb(255,0,0);
+        const uint16_t dstColor=gfx::rgb(0,0,255);
+        REQUIRE(put(art+"/transport-crystal.pak",syntheticArtPack(species,srcColor)));
+        REQUIRE(put(art+"/transport-rs.pak",syntheticArtPack(species,dstColor)));
+        ui::Config vc=cfg;vc.scanRoot=visualRoot;vc.dataDir=visualRoot+"/PKTOOL";
+        vc.spriteDirs={art};
+        const auto journal=vc.dataDir+"/transporter/active.vpt";
+        ui::App app(vc);
+        press(app,ui::kKeyY);
+        for(int i=0;i<4;++i) press(app,ui::kKeyA);
+        press(app,ui::kKeyStart);press(app,ui::kKeyStart);
+        REQUIRE(std::string(app.screenName())=="Transporter");
+        REQUIRE(!io::fileExists(journal)&&same(source,sb)&&same(destination,db));
+        std::array<uint16_t,256*192> top{},bottom{};
+        gfx::Canvas tc(top.data()),bc(bottom.data());
+        app.draw(tc,bc);
+        REQUIRE(countColor(top,srcColor)>=100);
+        REQUIRE(countColor(top,dstColor)==0);
+        // Draw the second cable half, past the 135-frame art transition.
+        for(int i=0;i<175;++i) app.update({});
+        app.draw(tc,bc);
+        REQUIRE(countColor(top,dstColor)>=100);
+        REQUIRE(countColor(top,srcColor)==0);
+        REQUIRE(!io::fileExists(journal)&&same(source,sb)&&same(destination,db));
+        press(app,ui::kKeyA);  // Skip remaining animation; commit exact review.
+        REQUIRE(std::string(app.screenName())=="TransferRecovery");
+        REQUIRE(br::inspectActiveJournal(journal).state==br::StartupState::Completed);
+        press(app,ui::kKeyA);  // Archive safely; the next test has no open journal.
+        REQUIRE(br::inspectActiveJournal(journal).state==br::StartupState::Clear);
     }
     // Verify the startup UI refuses a partially created journal too.
     REQUIRE(put(j+".new",{1,2,3}));
