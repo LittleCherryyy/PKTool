@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Build compact, pinned historic art packs for the optional Transporter.
-Source: PokeAPI/sprites, same source as tools/fetch_sprites.py.
+Source: PokeAPI/sprites, pinned at a fixed commit.
+Run: python3 tools/build_transport_sprites.py assets/nitrofs/sprites
 Stdlib-only PNG conversion for non-interlaced images at <= 8-bit samples.
+Exact per-edition packs are optional: absent entries use the renderer fallback.
 """
 import concurrent.futures
 import pathlib
@@ -13,12 +15,27 @@ import zlib
 
 PIN = "c0542f7c51215d9672439012838c99f520596cbd"
 BASE = "https://raw.githubusercontent.com/PokeAPI/sprites/" + PIN + "/sprites/pokemon/versions/"
+# Version-specific front images available at the pinned PokeAPI revision.
+# A pair is shared only where that source supplies a joint sheet. Japanese
+# Blue is deliberately absent (no verified front sheet at this revision):
+# users may add their own transport-blue-jp.pak; the renderer falls back safely.
+# Gen III targets need at most species 1..251 from the Gen I/II transporter.
 KINDS = {
-    "transport-gb": ("generation-i/red-blue/transparent", 151),
-    "transport-gbc": ("generation-ii/crystal/transparent", 251),
-    "transport-gbc-shiny": ("generation-ii/crystal/transparent/shiny", 251),
-    "transport-gba": ("generation-iii/emerald", 251),
-    "transport-gba-shiny": ("generation-iii/emerald/shiny", 251),
+    "transport-redgreen-jp": ("generation-i/red-green-japan", 151),
+    "transport-redblue-int": ("generation-i/red-blue/transparent", 151),
+    "transport-yellow": ("generation-i/yellow/transparent", 151),
+    "transport-gold": ("generation-ii/gold/transparent", 251),
+    "transport-gold-shiny": ("generation-ii/gold/transparent/shiny", 251),
+    "transport-silver": ("generation-ii/silver/transparent", 251),
+    "transport-silver-shiny": ("generation-ii/silver/transparent/shiny", 251),
+    "transport-crystal": ("generation-ii/crystal/transparent", 251),
+    "transport-crystal-shiny": ("generation-ii/crystal/transparent/shiny", 251),
+    "transport-rs": ("generation-iii/ruby-sapphire", 251),
+    "transport-rs-shiny": ("generation-iii/ruby-sapphire/shiny", 251),
+    "transport-frlg": ("generation-iii/firered-leafgreen", 251),
+    "transport-frlg-shiny": ("generation-iii/firered-leafgreen/shiny", 251),
+    "transport-emerald": ("generation-iii/emerald", 251),
+    "transport-emerald-shiny": ("generation-iii/emerald/shiny", 251),
 }
 
 def paeth(a,b,c):
@@ -88,6 +105,12 @@ def get(job):
     return kind,species,None,str(last)
 
 def main():
+    if len(sys.argv)==2 and sys.argv[1]=="--list":
+        for kind,(folder,count) in KINDS.items():
+            print(f"{kind}: {folder} (1..{count})")
+        return
+    if len(sys.argv)!=2:
+        raise SystemExit("usage: build_transport_sprites.py <output_directory> | --list")
     out=pathlib.Path(sys.argv[1]);out.mkdir(parents=True,exist_ok=True)
     jobs=[(kind,folder,i) for kind,(folder,count) in KINDS.items() for i in range(1,count+1)]
     packs={k:{} for k in KINDS}; failures=[]
