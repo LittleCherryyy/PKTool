@@ -75,6 +75,31 @@ constexpr SpriteSet spriteSet(VisualEdition v,bool destination=false) {
         default:return SpriteSet::Unknown;
     }
 }
+// NitroFS/SD art packs are keyed by game edition, never by the conversion's
+// destination generation. Pair editions share one sprite sheet only when the
+// pinned source actually provides the same art (R/B international, R/S, FR/LG).
+// Japanese Blue is intentionally a distinct, optional user-supplied pack:
+// the pinned PokeAPI snapshot has no Japanese Blue front sheet.
+inline const char* spriteKind(SpriteSet set,bool shiny=false) {
+    switch(set) {
+        case SpriteSet::RedGreenJP:return "transport-redgreen-jp";
+        case SpriteSet::BlueJP:return "transport-blue-jp";
+        case SpriteSet::RedBlueINT:return "transport-redblue-int";
+        case SpriteSet::Yellow:return "transport-yellow";
+        case SpriteSet::Gold:return shiny?"transport-gold-shiny":"transport-gold";
+        case SpriteSet::Silver:return shiny?"transport-silver-shiny":"transport-silver";
+        case SpriteSet::Crystal:return shiny?"transport-crystal-shiny":"transport-crystal";
+        case SpriteSet::RubySapphire:return shiny?"transport-rs-shiny":"transport-rs";
+        case SpriteSet::FireRedLeafGreen:return shiny?"transport-frlg-shiny":"transport-frlg";
+        case SpriteSet::Emerald:return shiny?"transport-emerald-shiny":"transport-emerald";
+        // A Bank slot does not identify its historic game art edition.
+        case SpriteSet::BankClassic:case SpriteSet::BankPK3:case SpriteSet::Unknown:return nullptr;
+    }
+    return nullptr;
+}
+inline const char* spriteKind(VisualEdition edition,bool shiny=false,bool destination=false) {
+    return spriteKind(spriteSet(edition,destination),shiny);
+}
 inline std::vector<Edition> options(saves::Game g,bool japanese) {
     using G=saves::Game;using E=Edition;
     switch(g) {
