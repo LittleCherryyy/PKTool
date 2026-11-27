@@ -639,6 +639,7 @@ void App::tickTransportPreview() {
     if(transportRows_.empty()) transportRows_=transportNotes_;
     transportPhase_=TransportPhase::Review;
     transportCursor_=transportScroll_=0;
+    transportReviewDetail_=0;
 }
 void App::updateTransporter(const Input& in) {
     if(transportPhase_==TransportPhase::RepairConfirm) {
@@ -696,6 +697,16 @@ void App::updateTransporter(const Input& in) {
             transportRepairScroll_=0;
             transportPhase_=TransportPhase::RepairConfirm;
         } else transportMessage_="No verified repair for this entry";
+        return;
+    }
+    if(transportPhase_==TransportPhase::Review &&
+       (in.pressed&(kKeyLeft|kKeyRight)) && transportCursor_>=0 &&
+       transportCursor_<static_cast<int>(transportEntries_.size())) {
+        const auto& entry=transportEntries_[transportCursor_];
+        const int count=static_cast<int>(entry.notes.size());
+        if(count>0)
+            transportReviewDetail_=wrap(transportReviewDetail_+
+                                       ((in.pressed&kKeyRight)?1:-1),count);
         return;
     }
     if(transportPhase_==TransportPhase::Source&&scanned_&&(in.pressed&kKeyY)) {openTransferHistory();return;}
@@ -1220,12 +1231,23 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         drawTransportSprite(top,e.mon,10,46,76,77,e.mon.format,false,transportSourceVisual_);
         marqueeActive_ |= drawMarquee(top,91,45,152,Align::Left,e.mon.nickname,kText,frame_-marqueeStart_);
         top.text(kFontSmall,91,65,152,Align::Left,e.ready?(e.returnedItem?"ITEM TO BAG":"READY"):"BLOCKED",e.ready?(e.returnedItem?kYellow:kGreen):kRed);
-        marqueeActive_ |= drawMarquee(top,91,84,152,Align::Left,e.ready?(e.returnedItem?e.itemName+" x1":"Can transfer"):e.error,kText,frame_-marqueeStart_);
+        const std::string primaryError=(!e.ready&&!e.notes.empty() &&
+                                         e.notes.front().rfind("ERROR: ",0)==0)
+                                        ?e.notes.front().substr(7):e.error;
+        marqueeActive_ |= drawMarquee(top,91,84,152,Align::Left,
+                 e.ready?(e.returnedItem?e.itemName+" x1":"Can transfer"):primaryError,
+                 e.ready?kText:kRed,frame_-marqueeStart_);
         top.text(kFontSmall,9,109,238,Align::Center,visual::label(transportSourceVisual_)+" -> "+visual::label(transportDestVisual_),kAccent);
-        if(!e.ready&&e.repairAvailable)
-            top.text(kFontSmall,9,126,238,Align::Center,"Y: Repair for Transfer available",kYellow);
-        else if(!e.notes.empty())
-            marqueeActive_ |= drawMarquee(top,9,126,238,Align::Left,e.notes.front(),kMuted,frame_-marqueeStart_);
+        if(!e.notes.empty()) {
+            const size_t idx=static_cast<size_t>(wrap(transportReviewDetail_,
+                                              static_cast<int>(e.notes.size())));
+            const auto& finding=e.notes[idx];
+            const Color c=finding.rfind("ERROR:",0)==0?kRed:
+                          finding.rfind("WARN:",0)==0?kYellow:kMuted;
+            marqueeActive_ |= drawMarquee(top,9,126,238,Align::Left,
+                  std::to_string(idx+1)+"/"+std::to_string(e.notes.size())+
+                  " "+finding,c,frame_-marqueeStart_);
+        }
         marqueeActive_ |= drawMarquee(top,9,147,238,Align::Center,transportMessage_,transportAccepted_?kGreen:kYellow,frame_-marqueeStart_);
         bottom.clear(kBackground);
         bottom.text(kFontSmall,4,3,248,Align::Center,std::to_string(ready)+" ready / "+std::to_string(blocked)+" blocked",kText);
@@ -1248,6 +1270,8 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         if(transportAccepted_) drawHints(bottom,{{"START","Move"},{"B","Cancel"}},{kKeyStart,kKeyB});
         else
 #endif
+        if(!e.ready && e.notes.size()>1)
+            bottom.text(kFontSmall,10,170,236,Align::Left,"LEFT / RIGHT: diagnostics",kMuted);
         if(!e.ready&&e.repairAvailable && ready>0)
             drawHints(bottom,{{"Y","Repair"},{"X","Ready"},{"A","Retry"},{"B","Saves"}},
                       {kKeyY,kKeyX,kKeyA,kKeyB});
