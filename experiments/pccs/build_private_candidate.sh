@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VPT035/VPT036/VPT037: private build for the hardware owner, never CI/public.
+# VPT035/VPT036/VPT037/VPT038: private build for the hardware owner, never CI/public.
 # This script redistributes no PCCS files and does not modify the Git checkout.
 set -euo pipefail
 
@@ -24,7 +24,8 @@ fi
 branch="$(git symbolic-ref --quiet --short HEAD || true)"
 if [ "$branch" != "dev/vpt035-private-test-build" ] && [ "$branch" != "dev/vpt036-unova-ui" ] &&
    [ "$branch" != "dev/vpt037-no-startup-probe" ] &&
-   [ "$branch" != "dev/vpt037-items-2-5" ]; then
+   [ "$branch" != "dev/vpt037-items-2-5" ] &&
+   [ "$branch" != "dev/vpt038-repair-for-transfer" ]; then
     echo "Checkout a private VPT035/VPT036/VPT037 test branch first (current: $branch)." >&2
     exit 2
 fi
@@ -44,6 +45,12 @@ case "$(basename "$output" | tr '[:upper:]' '[:lower:]')" in
     if [ "$branch" != "dev/vpt037-items-2-5" ]; then
         echo "ERROR: VPT037 filename requested, but current branch is $branch." >&2
         echo "Switch to dev/vpt037-items-2-5 before compiling." >&2
+        exit 2
+    fi
+    ;;
+  *vpt038*|*v038*)
+    if [ "$branch" != "dev/vpt038-repair-for-transfer" ]; then
+        echo "ERROR: VPT038 filename requested, but current branch is $branch." >&2
         exit 2
     fi
     ;;
@@ -71,6 +78,20 @@ git archive --format=tar "$commit" | tar -xf - -C "$work"
     # A different filename alone does not establish the themed build.
     # Refuse to produce a misleading VPT036 binary if this compiled ELF
     # does not contain the new UI and its explicit on-screen version ID.
+    if [ "$branch" = "dev/vpt038-repair-for-transfer" ]; then
+        for required in 'VPT038-Repair' 'Repair for Transfer' 'Pokemon Save Manager' 'MAIN MENU'; do
+            if ! grep -aFq "$required" "$work/PKTool.elf"; then
+                echo "ERROR: VPT038 ARM9 marker missing: $required" >&2
+                exit 1
+            fi
+        done
+        if grep -aFq 'VPT036-Unova' "$work/PKTool.elf" ||
+           grep -aFq 'VPT006 ARM9 read-only probe' "$work/PKTool.elf"; then
+            echo "ERROR: obsolete diagnostic or VPT036 marker in VPT038." >&2
+            exit 1
+        fi
+        echo "PASS: VPT038 Repair for Transfer present in ARM9, English UI, silent boot"
+    fi
     if [ "$branch" = "dev/vpt037-items-2-5" ]; then
         if grep -aFq 'VPT036-Unova' "$work/PKTool.elf" || 
            grep -aFq 'MENU PRINCIPAL' "$work/PKTool.elf" ||
