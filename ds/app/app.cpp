@@ -763,7 +763,9 @@ bool App::updateFrame(const Input& rawInput) {
             const int pages=std::max(1,static_cast<int>((transportResultMons_.size()+9)/10));
             if(rawInput.pressed&kKeyL) {transportResultPage_=(transportResultPage_+pages-1)%pages;redraw_=true;return true;}
             if(rawInput.pressed&kKeyR) {transportResultPage_=(transportResultPage_+1)%pages;redraw_=true;return true;}
-            if((rawInput.pressed&(kKeyA|kKeyB|kKeyX|kKeyStart)) ||
+            // The completed transfer has one explicit exit: A (or tapping
+            // the Continue button). B/X/START must not archive it accidentally.
+            if((rawInput.pressed&kKeyA) ||
                (rawInput.touched && touchedZone(rawInput)==kKeyA)) {
                 runTransferRecovery();redraw_=true;
             }
