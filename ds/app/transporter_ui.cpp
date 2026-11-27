@@ -163,7 +163,7 @@ void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
 #ifdef VPT_TRANSPORTER_WRITE
         if(transportResultMons_.size()>10)
             bottom.text(kFontSmall,0,101,256,Align::Center,"L/R: "+std::to_string(transportResultPage_+1)+"/"+std::to_string((transportResultMons_.size()+9)/10),kText);
-        bottom.roundRect(18,109,220,44,kAccent,kPanel,2);
+        bottom.roundRect(18,109,220,44,kCursor,kSelectedRow,2);
         bottom.text(kFontLarge,18,117,220,Align::Center,"Continue",kText);
         bottom.text(kFontSmall,18,134,220,Align::Center,"Press A to continue",kMuted);
         zones_.push_back({18,109,220,44,kKeyA});
@@ -1057,7 +1057,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
             const int index=transportScroll_+row,y=20+30*row;
             const auto& r=transportEntries_[index];
             const Color color=r.ready?(r.returnedItem?kYellow:kGreen):kRed;
-            bottom.roundRect(4,y,248,28,index==transportCursor_?kAccent:kBorder,kPanel,index==transportCursor_?2:1);
+            drawUnovaTile(bottom, 4, y, 248, 28, index==transportCursor_);
             if(r.mon.species) drawIcon(bottom,7,y,35,28,r.mon,false);
             bottom.text(kFontSmall,45,y+3,135,Align::Left,r.mon.nickname,kText);
             bottom.text(kFontSmall,180,y+3,66,Align::Right,r.ready?(r.returnedItem?"BAG":"OK"):"BLOCK",color);
@@ -1101,7 +1101,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
             const auto& item=transportSaves_[index];
             const bool ok=destinationReady(item,needed);
             const Color c=ok?kGreen:kRed;
-            bottom.roundRect(4,y,248,31,index==transportCursor_?kAccent:kBorder,kPanel,index==transportCursor_?2:1);
+            drawUnovaTile(bottom, 4, y, 248, 31, index==transportCursor_);
             bottom.fillCircle(12,y+8,3,c);
             const auto filename=io::fileName(item.path);
             if(index==transportCursor_) marqueeActive_|=drawMarquee(bottom,21,y+2,224,Align::Left,filename,kText,frame_-marqueeStart_);
