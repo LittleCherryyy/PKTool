@@ -264,6 +264,17 @@ struct BatchStage::State {
                             }
                         }
                     }
+                } else if(!preview.ok && preview.error=="Destination legality cannot be confirmed" &&
+                          preview.repairAvailable) {
+                    entry.repairAvailable=true;
+                    entry.repairChanges=preview.repairChanges;
+                    if(requested) {
+                        auto corrected=previewGbToGba(selected.data(),stored,format,true);
+                        if(corrected.ok && corrected.repaired) {
+                            preview=std::move(corrected);
+                            entry.repaired=true;
+                        }
+                    }
                 }
                 entry.notes=std::move(preview.notes);
                 if(requested&&!entry.repaired) entry.error="Repair unavailable for this Pokemon";
