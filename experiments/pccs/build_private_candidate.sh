@@ -37,6 +37,17 @@ if p.suffix.lower()!=".nds": raise SystemExit("Output must end in .nds")
 print(p)
 PY
 )"
+# Keep filename and checked-out source branch consistent. A filename is
+# not a version selector: the private build always archives the CURRENT HEAD.
+case "$(basename "$output" | tr '[:upper:]' '[:lower:]')" in
+  *vpt037*|*v037*)
+    if [ "$branch" != "dev/vpt037-items-2-5" ]; then
+        echo "ERROR: VPT037 filename requested, but current branch is $branch." >&2
+        echo "Switch to dev/vpt037-items-2-5 before compiling." >&2
+        exit 2
+    fi
+    ;;
+esac
 if [ -e "$output" ]; then
     echo "Refusing to overwrite existing $output" >&2; exit 2
 fi
@@ -46,6 +57,7 @@ partial="$output.partial.$$"
 trap 'rm -rf "$work"; rm -f "$partial"' EXIT
 
 echo "Private PKTool Transporter build ($branch) from commit: $commit"
+echo "IMPORTANT: only this branch and commit are packaged; filename does not choose a version."
 echo "Changes in your working tree are NOT included in the test binary."
 # Source-only snapshot; no downloaded PCCS subtree is copied into this repo.
 git archive --format=tar "$commit" | tar -xf - -C "$work"
@@ -60,6 +72,12 @@ git archive --format=tar "$commit" | tar -xf - -C "$work"
     # Refuse to produce a misleading VPT036 binary if this compiled ELF
     # does not contain the new UI and its explicit on-screen version ID.
     if [ "$branch" = "dev/vpt037-items-2-5" ]; then
+        if grep -aFq 'VPT036-Unova' "$work/PKTool.elf" || 
+           grep -aFq 'MENU PRINCIPAL' "$work/PKTool.elf" ||
+           grep -aFq 'Gerenciador Pokemon' "$work/PKTool.elf"; then
+            echo "ERROR: stale VPT036 UI strings detected in VPT037 executable." >&2
+            exit 1
+        fi
         if ! grep -aFq 'VPT037-UI' "$work/PKTool.elf" ||
            ! grep -aFq 'Pokemon Save Manager' "$work/PKTool.elf" ||
            ! grep -aFq 'MAIN MENU' "$work/PKTool.elf"; then
