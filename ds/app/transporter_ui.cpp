@@ -1010,6 +1010,35 @@ void App::drawTransportAnimation(Canvas& top,Canvas& bottom) {
 
 void App::drawTransporter(Canvas& top,Canvas& bottom) {
     if(transportAnimating_) {drawTransportAnimation(top,bottom);return;}
+    if(transportPhase_==TransportPhase::RepairConfirm &&
+       transportRepairFocus_<transportEntries_.size()) {
+        const auto& candidate=transportEntries_[transportRepairFocus_];
+        const auto& changes=candidate.repairChanges;
+        drawChrome(top,"Repair for Transfer","PREVIEW",kYellow);
+        top.roundRect(5,36,246,135,kBorder,kPanel);
+        drawTransportSprite(top,candidate.mon,10,45,74,78,candidate.mon.format,false,transportSourceVisual_);
+        marqueeActive_|=drawMarquee(top,93,48,150,Align::Left,candidate.mon.nickname,kText,frame_-marqueeStart_);
+        top.text(kFontSmall,93,66,150,Align::Left,"Original blocked",kRed);
+        top.text(kFontSmall,93,82,150,Align::Left,"Candidate verified",kGreen);
+        top.text(kFontSmall,93,100,150,Align::Left,"PCCS LEGAL checked",kAccent);
+        top.hline(12,128,232,kBorder);
+        top.text(kFontSmall,11,135,234,Align::Left,"Source save stays unchanged.",kText);
+        top.text(kFontSmall,11,150,234,Align::Left,"Only the transferred copy is repaired.",kMuted);
+        bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
+        bottom.fillRect(0,0,256,22,kTitleBar);
+        bottom.text(kFontSmall,7,4,244,Align::Left,
+                    "PROPOSED CHANGES  "+std::to_string(changes.size()),kAccent);
+        for(int row=0;row<3&&transportRepairScroll_+row<static_cast<int>(changes.size());++row) {
+            const int index=transportRepairScroll_+row,y=27+40*row;
+            drawUnovaTile(bottom,5,y,246,37,row==0);
+            marqueeActive_|=drawMarquee(bottom,12,y+7,228,Align::Left,
+                        std::to_string(index+1)+". "+changes[index],row==0?kText:kMuted,frame_-marqueeStart_);
+        }
+        bottom.text(kFontSmall,6,151,244,Align::Center,
+                    "Not an official Nintendo transfer",kYellow);
+        drawHints(bottom,{{"A","Apply"},{"B","Cancel"},{"+","Scroll"}},{kKeyA,kKeyB,0});
+        return;
+    }
     if(transportPhase_==TransportPhase::Edition) {
         drawChrome(top,"Confirm game edition","VISUAL ONLY",kAccent);
         top.roundRect(5,35,246,137,kBorder,kPanel);
@@ -1192,7 +1221,10 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         top.text(kFontSmall,91,65,152,Align::Left,e.ready?(e.returnedItem?"ITEM TO BAG":"READY"):"BLOCKED",e.ready?(e.returnedItem?kYellow:kGreen):kRed);
         marqueeActive_ |= drawMarquee(top,91,84,152,Align::Left,e.ready?(e.returnedItem?e.itemName+" x1":"Can transfer"):e.error,kText,frame_-marqueeStart_);
         top.text(kFontSmall,9,109,238,Align::Center,visual::label(transportSourceVisual_)+" -> "+visual::label(transportDestVisual_),kAccent);
-        if(!e.notes.empty()) marqueeActive_ |= drawMarquee(top,9,126,238,Align::Left,e.notes.front(),kMuted,frame_-marqueeStart_);
+        if(!e.ready&&e.repairAvailable)
+            top.text(kFontSmall,9,126,238,Align::Center,"Y: Repair for Transfer available",kYellow);
+        else if(!e.notes.empty())
+            marqueeActive_ |= drawMarquee(top,9,126,238,Align::Left,e.notes.front(),kMuted,frame_-marqueeStart_);
         marqueeActive_ |= drawMarquee(top,9,147,238,Align::Center,transportMessage_,transportAccepted_?kGreen:kYellow,frame_-marqueeStart_);
         bottom.clear(kBackground);
         bottom.text(kFontSmall,4,3,248,Align::Center,std::to_string(ready)+" ready / "+std::to_string(blocked)+" blocked",kText);
@@ -1215,7 +1247,13 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         if(transportAccepted_) drawHints(bottom,{{"START","Move"},{"B","Cancel"}},{kKeyStart,kKeyB});
         else
 #endif
-        if(ready>0&&blocked>0) drawHints(bottom,{{"X","Ready only"},{"A","Retry"},{"B","Saves"}},{kKeyX,kKeyA,kKeyB});
+        if(!e.ready&&e.repairAvailable && ready>0)
+            drawHints(bottom,{{"Y","Repair"},{"X","Ready"},{"A","Retry"},{"B","Saves"}},
+                      {kKeyY,kKeyX,kKeyA,kKeyB});
+        else if(!e.ready&&e.repairAvailable)
+            drawHints(bottom,{{"Y","Repair"},{"A","Retry"},{"B","Saves"}},{kKeyY,kKeyA,kKeyB});
+        else if(ready>0&&blocked>0)
+            drawHints(bottom,{{"X","Ready only"},{"A","Retry"},{"B","Saves"}},{kKeyX,kKeyA,kKeyB});
         else drawHints(bottom,{{"A","Retry"},{"B","Saves"}},{kKeyA,kKeyB});
         return;
     }
@@ -1268,6 +1306,7 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         case TransportPhase::Destination:phase="Select GBA save";break;
         case TransportPhase::DestinationSlot:phase="Select first empty slot";break;
         case TransportPhase::Review:phase=transportAccepted_?"Preview accepted":"Preview refused";break;
+        case TransportPhase::RepairConfirm:phase="Repair preview";break;
     }
     top.text(kFontLarge,9,45,238,Align::Center,phase,kText);
     top.text(kFontSmall,9,66,238,Align::Center,"Gen I/II -> Gen III | 6 languages",kMuted);
