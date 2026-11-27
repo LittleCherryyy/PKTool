@@ -105,15 +105,12 @@ int main() {
         REQUIRE(app.update({ui::kKeyY,ui::kKeyY}));
         REQUIRE(std::string(app.screenName())=="Transporter");
         REQUIRE(app.update({ui::kKeyA,ui::kKeyA}));
-        REQUIRE(app.update({})); // transfer source loaded, boxes will follow
-        REQUIRE(app.transporterBusy());
+        REQUIRE(app.update({})); // cached source and GB boxes decoded in one pass
+        REQUIRE(!app.transporterBusy()); // no intermediate generic UI at all
+        REQUIRE(app.transporterRows().size()==1);
         app.draw(tc,bc);
         REQUIRE(top[5*256+5]==gfx::rgb(228,63,76));
-        REQUIRE(bottom[5*256+5]==gfx::rgb(228,63,76));
-        for(int i=0;i<10000&&app.transporterBusy();++i)
-            REQUIRE(app.update({}));
-        REQUIRE(!app.transporterBusy());
-        app.draw(tc,bc);
+        REQUIRE(top[40*256+5]==gfx::rgb(52,164,176));
         REQUIRE(bottom[27*256+5]==gfx::rgb(228,63,76));
         REQUIRE(same(a,sb)&&same(b,db)); // nothing written by preloading
         std::puts("PASS: startup preload on Home, <=384 KiB cache, no old interface on first source open");
