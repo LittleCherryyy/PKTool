@@ -87,6 +87,7 @@ int main() {
     // opening any menu or switching screens.
     {
         ui::App app(cfg);
+        app.setAnimations(false); // exact RGB555 theme assertions, no fade blending
         REQUIRE(std::string(app.screenName())=="Home");
         std::array<uint16_t,256*192> top{},bottom{};
         gfx::Canvas tc(top.data()),bc(bottom.data());
