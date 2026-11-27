@@ -3026,8 +3026,8 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
     if(config_.transporterPreview && config_.storageReady) {
         const std::string catalogStatus=transportScan_?
             "INDEXING SD / SAVES":!scanned_?"PREPARING SAVES":
-            preloadIndex_<saveFiles_.size()?
-                "CACHING "+std::to_string(preloadIndex_)+"/"+std::to_string(saveFiles_.size()):
+            preloadIndex_<preloadOrder_.size()?
+                "CACHING "+std::to_string(preloadIndex_)+"/"+std::to_string(preloadOrder_.size()):
             preloadArtIndex_<preloadArtQueue_.size()?"PREPARING SPRITES":
                 std::to_string(saveFiles_.size())+" SAVES READY";
         top.text(kFontSmall,0,179,256,Align::Center,catalogStatus,kMuted);
