@@ -46,6 +46,15 @@ jobs:
             build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt002"
       - name: Run conversion and legality tests (bounded time)
         run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt002"
+      - name: Compile guarded Gen III destination-repair tests
+        run: |
+          c++ -std=c++17 -O2 -Wall -Wextra -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \
+            experiments/pccs/test_destination_repair.cpp \
+            build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt038-dest"
+      - name: Test destination-repair candidate and stage independent PKHeX fixtures
+        run: |
+          mkdir -p "$RUNNER_TEMP/pk3-audit"
+          VPT_PK3_AUDIT_DIR="$RUNNER_TEMP/pk3-audit" timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt038-dest"
       - name: Compile staged save transfer test
         run: |
           c++ -std=c++17 -O2 -Wall -Wextra -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \
