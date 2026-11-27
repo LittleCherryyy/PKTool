@@ -239,6 +239,7 @@ private:
     std::vector<size_t> transportRepairIndices_;
     size_t transportRepairFocus_=0;
     int transportRepairScroll_=0;
+    int transportReviewDetail_=0; // selected candidate's diagnostics page
     uint8_t transportLanguage_=2, transportGeneration_=2;
     bool transportAnimating_=false;
     uint32_t transportAnimationStart_=0;
