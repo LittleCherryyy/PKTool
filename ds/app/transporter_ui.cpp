@@ -627,6 +627,14 @@ void App::beginTransportBoxes(bool source) {
     if(!source) transportBoxSpecies_.resize(transportSave_->boxCount()*transportBoxSlots_);
     transportLoadSource_=source;transportLoadBox_=0;
     transportCursor_=transportScroll_=0;
+    // GB/GBC source saves are only 32-64 KiB and already in memory.
+    // Decode every source box immediately: the first press of A transitions
+    // directly to the themed Pokémon selector without briefly showing a
+    // generic spinner or the previous source menu. Full GBA destination boxes
+    // remain cooperative to cap one-frame work and RAM.
+    if(source && transportSave_->format()<=2) {
+        while(transportLoadBox_>=0) tickTransportBoxes();
+    }
 }
 void App::tickTransportBoxes() {
     const bool source=transportLoadSource_;
