@@ -208,7 +208,9 @@ private:
         std::vector<uint8_t> bytes;
     };
     std::vector<PreloadedImage> preloadedImages_;
-    size_t preloadedBytes_=0,preloadIndex_=0;
+    struct WarmSprite {std::string kind;uint16_t species=0;};
+    std::vector<WarmSprite> preloadArtQueue_;
+    size_t preloadedBytes_=0,preloadIndex_=0,preloadArtIndex_=0;
     bool startupCatalogScan_=false;
     bool transportScanSource_=true,transportLoadSource_=true;
     int transportLoadBox_=-1;
