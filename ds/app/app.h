@@ -201,7 +201,7 @@ private:
     std::string transportLoadPath_;
     void transporterPreview();
     void tickTransportPreview();
-    enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review, History, Edition };
+    enum class TransportPhase { Source, SourceMon, Destination, DestinationSlot, Review, RepairConfirm, History, Edition };
     struct VisualChoice {std::string path;saves::Game family;transport_visual::VisualEdition visual;};
     std::vector<VisualChoice> transportVisualChoices_;
     transport_visual::VisualEdition transportSourceVisual_,transportDestVisual_;
@@ -233,6 +233,11 @@ private:
     bool transportAccepted_ = false;
     std::vector<pokemon::pccs_bridge::EntryReview> transportEntries_;
     std::vector<pokemon::pccs_bridge::TransferPair> transportReviewPairs_;
+    // Explicit per-entry approvals apply only to the current immutable review
+    // pair list. They are discarded if that list is changed or abandoned.
+    std::vector<size_t> transportRepairIndices_;
+    size_t transportRepairFocus_=0;
+    int transportRepairScroll_=0;
     uint8_t transportLanguage_=2, transportGeneration_=2;
     bool transportAnimating_=false;
     uint32_t transportAnimationStart_=0;
