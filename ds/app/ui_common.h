@@ -20,33 +20,46 @@ using gfx::rgb;
 
 // ----- Theme -----------------------------------------------------------------
 
-inline const Color kBackground = rgb(24, 38, 82);
-inline const Color kGridLine = rgb(34, 54, 110);
-inline const Color kTitleBar = rgb(12, 16, 30);
-inline const Color kStatusBar = rgb(22, 34, 72);
-inline const Color kPanel = rgb(18, 30, 64);
-inline const Color kPanelDark = rgb(14, 26, 48);
-inline const Color kBoxArea = rgb(20, 44, 62);
-inline const Color kBoxGrid = rgb(26, 54, 74);
-inline const Color kBorder = rgb(44, 88, 170);
-inline const Color kBorderLight = rgb(150, 176, 226);
-inline const Color kAccent = rgb(40, 180, 240);
-inline const Color kCursor = rgb(240, 120, 96);
-inline const Color kText = rgb(238, 244, 255);
-inline const Color kMuted = rgb(140, 160, 206);
-inline const Color kDim = rgb(70, 92, 140);
-inline const Color kGreen = rgb(70, 204, 140);
-inline const Color kYellow = rgb(244, 200, 70);
-inline const Color kRed = rgb(236, 92, 92);
+// VPT036 Unova Pokedex: simple RGB555 flat colours for the DSi's 256x192
+// software framebuffers. No textures, alpha layers or extra sprite caches.
+inline const Color kBackground = rgb(14, 19, 23);
+inline const Color kGridLine = rgb(24, 31, 34);
+inline const Color kTitleBar = rgb(9, 13, 17);
+inline const Color kStatusBar = rgb(20, 27, 31);
+inline const Color kPanel = rgb(22, 29, 33);
+inline const Color kPanelDark = rgb(15, 21, 25);
+inline const Color kBoxArea = rgb(20, 42, 44);
+inline const Color kBoxGrid = rgb(32, 57, 58);
+inline const Color kBorder = rgb(52, 164, 176);
+inline const Color kBorderLight = rgb(137, 218, 222);
+inline const Color kAccent = rgb(83, 219, 221);
+inline const Color kCursor = rgb(228, 63, 76);
+inline const Color kText = rgb(242, 246, 245);
+inline const Color kMuted = rgb(170, 194, 194);
+inline const Color kDim = rgb(92, 122, 125);
+inline const Color kGreen = rgb(88, 209, 158);
+inline const Color kYellow = rgb(244, 204, 91);
+inline const Color kRed = rgb(229, 72, 83);
 inline const Color kMale = rgb(96, 164, 255);
 inline const Color kFemale = rgb(255, 126, 156);
-inline const Color kSelectedRow = rgb(28, 58, 110);
+inline const Color kSelectedRow = rgb(86, 28, 37);
 
 constexpr int kTitleHeight = 18;
 constexpr int kStatusTop = 18;
 constexpr int kStatusHeight = 15;
 constexpr int kBodyTop = kStatusTop + kStatusHeight;
 constexpr int kHintTop = 176;
+
+// Flat Pokedex selection panel. Drawn directly with Canvas; no new art
+// allocations or changes to the pre-existing input/touch zones.
+inline void drawUnovaTile(Canvas& c, int x, int y, int w, int h, bool selected) {
+    c.roundRect(x, y, w, h, selected ? kCursor : kBorder,
+                selected ? kSelectedRow : kPanelDark, selected ? 2 : 1);
+    if (selected) {
+        c.fillRect(x + 4, y + 4, 13, 2, kRed);
+        c.fillRect(x + 4, y + 6, 2, 7, kRed);
+    }
+}
 
 // Touch zone identifiers. Values below kZoneItem are key masks.
 constexpr int kZoneItem = 0x10000;       // + index (tile, row, cell)
