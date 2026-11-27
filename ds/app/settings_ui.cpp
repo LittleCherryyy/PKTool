@@ -122,7 +122,7 @@ void App::updateSettings(const Input& in) {
 }
 
 void App::drawSettings(Canvas& top, Canvas& bottom) {
-    drawChrome(top, "OPCOES  /  CONFIGURACOES", settings_ != setSaved_ ? "Edited" : "", kYellow);
+    drawChrome(top, "SETTINGS  /  OPTIONS", settings_ != setSaved_ ? "Edited" : "", kYellow);
     top.roundRect(4, kBodyTop + 3, 248, 150, kBorder, kPanel);
     top.text(kFontLarge, 12, 40, 232, Align::Left, kSetTitles[setCursor_], kText);
 
@@ -171,8 +171,8 @@ void App::drawSettings(Canvas& top, Canvas& bottom) {
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
     bottom.roundRect(4, 3, 248, 170, kBorder, kPanel);
     bottom.hline(12, 105, 232, kBorder);
-    bottom.text(kFontSmall, 12, 113, 232, Align::Left, "UNOVA / POKEDEX  -  TEMA LEVE", kAccent);
-    bottom.text(kFontSmall, 12, 129, 232, Align::Left, "Controles e edicao originais preservados.", kMuted);
+    bottom.text(kFontSmall, 12, 113, 232, Align::Left, "POKEDEX THEME  /  LIGHTWEIGHT", kAccent);
+    bottom.text(kFontSmall, 12, 129, 232, Align::Left, "Original controls and save editing retained.", kMuted);
     const int rowH = 16;
     const int x = 8;
     const int w = 236;
