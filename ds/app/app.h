@@ -112,6 +112,7 @@ public:
     bool transporterBusy() const {return bool(transportScan_)||transportLoadBox_>=0||bool(transportBatch_);}
     const std::vector<std::string>& transporterRows() const {return transportRows_;}
     bool transporterChoosingEdition() const {return transportPhase_==TransportPhase::Edition;}
+    bool transporterRepairConfirm() const {return transportPhase_==TransportPhase::RepairConfirm;}
     transport_visual::VisualEdition transporterVisual(bool source) const {return source?transportSourceVisual_:transportDestVisual_;}
 #endif
     void setAnimations(bool on) { settings_.animations = on; }
