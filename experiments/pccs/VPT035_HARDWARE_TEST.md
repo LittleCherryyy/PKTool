@@ -33,6 +33,34 @@ existing candidate. The user's working checkout stays unmodified; its local
 uncommitted edits are not included in the binary. A plain `make` builds
 upstream PKTool and **does not include this experimental transporter**.
 
+## Windows/MSYS2: restart stalled sprite download safely
+
+If the first private build displays PCCS `libpccs.a` sizes and then appears
+idle in `python3`, it is building thousands of historical art images. VPT035
+now prints progress every 100 images and saves every converted sprite outside
+the disposable checkout in `~/.cache/pktool-vpt-art`. A new run can reuse
+already downloaded images. Pinned missing HTTP 404 sprites are remembered too.
+
+In devkitPro MSYS2, after stopping the **old** running build with Ctrl+C:
+
+```sh
+cd /g/GITHUB/PKTOOLTRANSPORTER/PKTool
+git pull --ff-only origin dev/vpt035-private-test-build
+export DEVKITPRO=/c/devkitPro
+export DEVKITARM="$DEVKITPRO/devkitARM"
+export PATH="$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH"
+# Use system curl if Python urllib hangs on this Windows network.
+export VPT_SPRITES_FETCHER=curl
+bash experiments/pccs/build_private_candidate.sh \
+  /g/GITHUB/PKTOOLTRANSPORTER/VPT035-PKTool.nds
+```
+
+This restarts the temporary PCCS build, but future art downloads are cached.
+The first line `Historic art: ...` indicates sprite generation has started.
+If network access drops, the generator prints failures and uses the built-in
+sprite fallback for missing entries. A completely empty edition pack still
+fails the build rather than silently claiming to contain its artwork.
+
 ## Prepare the Nintendo DSi
 
 1. Store an external copy of **both** original `.sav` files on the PC.
