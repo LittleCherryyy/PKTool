@@ -74,6 +74,26 @@ TEST(sprite_file_parsing) {
     CHECK(!gfx::SpriteStore::parse({'X', 'K', 'S', '1', 1, 0, 1, 0, 0, 0}, w, h, pixels));
 }
 
+TEST(ui_unova_theme_keeps_native_256x192_layout) {
+    char pattern[] = "/tmp/pktool-unova-XXXXXX";
+    std::string dir = mkdtemp(pattern);
+    ui::Config config;
+    config.scanRoot = dir;
+    config.dataDir = io::joinPath(dir, "PKTOOL");
+    ui::App app(config);
+    gfx::Canvas top(g_top.data()), bottom(g_bottom.data());
+    app.draw(top, bottom);
+    // A red Pokédex header and red selected tile; neighbouring tile cyan.
+    CHECK_EQ(g_top[5 * 256 + 5], gfx::rgb(228, 63, 76));
+    CHECK_EQ(g_bottom[57 * 256 + 8], gfx::rgb(228, 63, 76));
+    CHECK_EQ(g_bottom[57 * 256 + 132], gfx::rgb(52, 164, 176));
+    // No new submenu/actions: the bottom-right tile still opens Settings.
+    press(app, ui::kKeyDown);
+    press(app, ui::kKeyRight);
+    press(app, ui::kKeyA);
+    CHECK(std::string(app.screenName()) == "Settings");
+}
+
 TEST(ui_navigates_without_saves_or_sprites) {
     char pattern[] = "/tmp/pktool-ui-XXXXXX";
     std::string dir = mkdtemp(pattern);
