@@ -358,13 +358,19 @@ void App::startTransportScan(bool source) {
     // throw away the work already completed in idle startup frames.
     if(transportScan_) return;
     transportScan_.reset(new saves::IncrementalSaveScan(config_.scanRoot,3,5,{}));
-    startupCatalogScan_=screen_==Screen::Home;
 }
 void App::tickTransportScan() {
     if(!transportScan_ || !transportScan_->step()) return;
     saveFiles_=transportScan_->take();transportScan_.reset();
     scanned_=true;syncTransportCatalog();
-    preloadIndex_=0;
+    preloadIndex_=0;preloadArtIndex_=0;preloadArtQueue_.clear();
+    preloadOrder_.clear();
+    for(size_t i=0;i<saveFiles_.size();++i) preloadOrder_.push_back(i);
+    std::stable_sort(preloadOrder_.begin(),preloadOrder_.end(),[&](size_t a,size_t b) {
+        const auto rank=[](unsigned g){return g<=2?0:g==3?1:2;};
+        return rank(saves::gameGeneration(saveFiles_[a].game)) <
+               rank(saves::gameGeneration(saveFiles_[b].game));
+    });
     if(screen_==Screen::Home) {
         // Startup preload does not navigate on behalf of the player.
         redraw_=true;
@@ -384,7 +390,7 @@ void App::tickStartupPreload() {
     if(!scanned_) return;
     // First finish the bounded save cache. Only after that prewarm actual art
     // on separate frames to keep the Home animation responsive.
-    if(preloadIndex_>=saveFiles_.size()) {
+    if(preloadIndex_>=preloadOrder_.size()) {
         if(preloadArtIndex_<preloadArtQueue_.size()) {
             const auto& art=preloadArtQueue_[preloadArtIndex_++];
             sprites_.get(art.kind.c_str(),art.species);
@@ -394,7 +400,7 @@ void App::tickStartupPreload() {
     }
     constexpr size_t kMaxCacheBytes=384u*1024u;
     constexpr size_t kMaxCacheFiles=8;
-    const auto& entry=saveFiles_[preloadIndex_++];
+    const auto& entry=saveFiles_[preloadOrder_[preloadIndex_++]];
     const unsigned generation=saves::gameGeneration(entry.game);
     if(generation<1 || generation>3 ||
        preloadedImages_.size()>=kMaxCacheFiles ||
