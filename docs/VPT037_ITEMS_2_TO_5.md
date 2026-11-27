@@ -15,6 +15,39 @@ Branch: `dev/vpt037-items-2-5`, based on `dev/vpt037-no-startup-probe`. The appr
 
 The source-to-destination PCCS conversion, legality rules, transfer journal, real-write ordering, bank logic and link animation were **not changed**. Repair for Transfer and writing concurrently with animation are independent upcoming items 6 and 7; preload is item 8. This is a UI/navigation batch only.
 
+## Troubleshooting: the DSi still launches VPT036
+
+The original private builder accepted several branches, so it was possible to
+build the VPT036 source using an output filename containing "VPT037". The
+VPT037 branch now stamps the ROM banner as `PKTool V037` and rejects old
+VPT036 interface strings in the ARM9 binary.
+
+**Do not rely on output filename to identify the source.** In devkitPro MSYS2,
+from the existing repository:
+
+```sh
+cd /g/GITHUB/PKTOOLTRANSPORTER/PKTool
+git fetch origin
+git switch dev/vpt037-items-2-5 2>/dev/null || git switch --track origin/dev/vpt037-items-2-5
+test "$(git branch --show-current)" = "dev/vpt037-items-2-5" || { echo "WRONG BRANCH"; exit 1; }
+git pull --ff-only origin dev/vpt037-items-2-5
+git log -1 --oneline
+# Then use the usual environment exports and private build command, with a
+# unique new output name (the script never overwrites a previous .nds).
+```
+
+Run `bash experiments/pccs/build_private_candidate.sh /g/GITHUB/PKTOOLTRANSPORTER/VPT037-UI-IDENTIFIED.nds` after setting the devkitARM environment. Confirm the terminal reports
+`PASS: VPT037 English home, private identifier, silent boot` and
+`Build verified`. Copy **this exact file** to the DSi internal SD and
+launch its corresponding path in TWiLight Menu++; do not select an older
+`PKTool.nds` or `VPT036-Unova.nds`.
+
+In-game evidence: main menu title `MAIN MENU`, top `Pokemon Save Manager`,
+no on-screen Unova subtitle, and `VPT037-UI` in Settings > About. If the UI
+still shows Portuguese `MENU PRINCIPAL`, the running file is not this build.
+The Pokédex color palette remains intentionally similar to VPT036, so color
+alone is not a version indicator.
+
 ## Private test on real DSi
 
 With devkitPro MSYS2 and the local repository already cloned:
