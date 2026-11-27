@@ -1,7 +1,7 @@
 name: VPT002 PCCS conversion probe
 on:
   push:
-    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history', 'dev/vpt030-link-experience', 'dev/vpt031-edition-sprites', 'dev/vpt032-link-transformer', 'dev/vpt033-render-memory', 'dev/vpt034-visual-regression', 'dev/vpt035-private-test-build', 'dev/vpt036-unova-ui', 'dev/vpt037-no-startup-probe', 'dev/vpt037-items-2-5', 'dev/vpt038-repair-for-transfer', 'dev/vpt038-destination-repair']
+    branches: ['dev/vpt001-pccs', 'dev/vpt028-bank-box-history', 'dev/vpt030-link-experience', 'dev/vpt031-edition-sprites', 'dev/vpt032-link-transformer', 'dev/vpt033-render-memory', 'dev/vpt034-visual-regression', 'dev/vpt035-private-test-build', 'dev/vpt036-unova-ui', 'dev/vpt037-no-startup-probe', 'dev/vpt037-items-2-5', 'dev/vpt038-repair-for-transfer', 'dev/vpt038-destination-repair', 'dev/vpt040-startup-cache-and-ui']
     paths: ['experiments/pccs/**', 'ds/app/**', 'ds/gfx/**', 'tests/test_transport_sprite_packs.cpp', 'tools/build_transport_sprites.py', '.github/workflows/vpt002-conversion.yml']
   workflow_dispatch:
 permissions:
@@ -46,6 +46,8 @@ jobs:
             build-vpt/libpktool_core.a "$RUNNER_TEMP/pccs/lib/libpccs.a" -o "$RUNNER_TEMP/vpt002"
       - name: Run conversion and legality tests (bounded time)
         run: timeout 180s stdbuf -oL "$RUNNER_TEMP/vpt002"
+      - name: Verify lossless, compact NitroFS art format
+        run: python3 -m unittest discover -s tools -p test_compact_sprite_packs.py
       - name: Compile guarded Gen III destination-repair tests
         run: |
           c++ -std=c++17 -O2 -Wall -Wextra -I. -I"$RUNNER_TEMP/pccs/include" -I"$RUNNER_TEMP/pccs/lib/include" \
