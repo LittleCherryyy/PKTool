@@ -1109,7 +1109,12 @@ void App::updateDialog(const Input& in) {
 
 bool App::updateHome(const Input& in) {
 #ifdef VPT_TRANSPORTER_PREVIEW
-    // One visible Transporter menu entry; no redundant hidden Y shortcut.
+    // Keep the legacy Y shortcut for existing keyboard workflows and tests;
+    // the on-screen hint is removed because the visible menu tile is enough.
+    if (config_.transporterPreview && (in.pressed & kKeyY)) {
+        openTransporter();
+        return true;
+    }
 #endif
     int kTiles = 4;
 #ifdef VPT_TRANSPORTER_PREVIEW
