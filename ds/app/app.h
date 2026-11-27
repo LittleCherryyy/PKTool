@@ -113,6 +113,14 @@ public:
     const std::vector<std::string>& transporterRows() const {return transportRows_;}
     bool transporterChoosingEdition() const {return transportPhase_==TransportPhase::Edition;}
     bool transporterRepairConfirm() const {return transportPhase_==TransportPhase::RepairConfirm;}
+    bool startupCatalogReady() const {return scanned_ && !transportScan_;}
+    bool startupPreloadReady() const {
+        return startupCatalogReady() && preloadIndex_>=saveFiles_.size() &&
+               preloadArtIndex_>=preloadArtQueue_.size();
+    }
+    size_t startupCachedFiles() const {return preloadedImages_.size();}
+    size_t startupCachedBytes() const {return preloadedBytes_;}
+
     transport_visual::VisualEdition transporterVisual(bool source) const {return source?transportSourceVisual_:transportDestVisual_;}
 #endif
     void setAnimations(bool on) { settings_.animations = on; }
