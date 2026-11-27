@@ -122,7 +122,7 @@ void App::updateSettings(const Input& in) {
 }
 
 void App::drawSettings(Canvas& top, Canvas& bottom) {
-    drawChrome(top, "Settings", settings_ != setSaved_ ? "Edited" : "", kYellow);
+    drawChrome(top, "OPCOES  /  CONFIGURACOES", settings_ != setSaved_ ? "Edited" : "", kYellow);
     top.roundRect(4, kBodyTop + 3, 248, 150, kBorder, kPanel);
     top.text(kFontLarge, 12, 40, 232, Align::Left, kSetTitles[setCursor_], kText);
 
@@ -170,6 +170,9 @@ void App::drawSettings(Canvas& top, Canvas& bottom) {
 
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
     bottom.roundRect(4, 3, 248, 170, kBorder, kPanel);
+    bottom.hline(12, 105, 232, kBorder);
+    bottom.text(kFontSmall, 12, 113, 232, Align::Left, "UNOVA / POKEDEX  -  TEMA LEVE", kAccent);
+    bottom.text(kFontSmall, 12, 129, 232, Align::Left, "Controles e edicao originais preservados.", kMuted);
     const int rowH = 16;
     const int x = 8;
     const int w = 236;
@@ -178,11 +181,8 @@ void App::drawSettings(Canvas& top, Canvas& bottom) {
     for (int row = 0; row < kSetRowCount; ++row) {
         int ry = 8 + row * (rowH + 3);
         bool selected = row == setCursor_;
-        if (selected) {
-            bottom.roundRect(x, ry, w, rowH, kAccent, kSelectedRow);
-        } else {
-            bottom.fillRect(x + 1, ry, w - 2, rowH, kPanelDark);
-        }
+        if (selected) drawUnovaTile(bottom, x, ry, w, rowH, true);
+        else drawUnovaTile(bottom, x, ry, w, rowH, false);
         bottom.text(kFontSmall, x + 6, ry + 1, 94, Align::Left, kSetLabels[row], selected ? kText : kMuted);
         zones_.push_back({x, ry, 100, rowH, kZoneItem + row});
         std::string value;
