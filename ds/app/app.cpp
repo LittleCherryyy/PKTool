@@ -793,7 +793,8 @@ bool App::updateFrame(const Input& rawInput) {
     // Keep the Pokédex Home responsive while indexing. Never block boot on
     // a complete SD search; each idle-frame task has a strictly bounded size.
     if(config_.transporterPreview && screen_==Screen::Home &&
-       config_.storageReady && dialog_==Dialog::None) {
+       config_.storageReady && dialog_==Dialog::None &&
+       rawInput.pressed==0 && rawInput.repeated==0 && !rawInput.touched) {
         if(transportScan_) tickTransportScan();
         else if(scanned_) tickStartupPreload();
     }
