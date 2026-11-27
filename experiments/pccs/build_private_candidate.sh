@@ -26,7 +26,8 @@ if [ "$branch" != "dev/vpt035-private-test-build" ] && [ "$branch" != "dev/vpt03
    [ "$branch" != "dev/vpt037-no-startup-probe" ] &&
    [ "$branch" != "dev/vpt037-items-2-5" ] &&
    [ "$branch" != "dev/vpt038-repair-for-transfer" ] &&
-   [ "$branch" != "dev/vpt038-destination-repair" ]; then
+   [ "$branch" != "dev/vpt038-destination-repair" ] &&
+   [ "$branch" != "dev/vpt040-startup-cache-and-ui" ]; then
     echo "Checkout a private VPT035/VPT036/VPT037 test branch first (current: $branch)." >&2
     exit 2
 fi
@@ -42,6 +43,12 @@ PY
 # Keep filename and checked-out source branch consistent. A filename is
 # not a version selector: the private build always archives the CURRENT HEAD.
 case "$(basename "$output" | tr '[:upper:]' '[:lower:]')" in
+  *vpt040*|*v040*|*preload*)
+    if [ "$branch" != "dev/vpt040-startup-cache-and-ui" ]; then
+        echo "ERROR: VPT040 filename requires dev/vpt040-startup-cache-and-ui." >&2
+        exit 2
+    fi
+    ;;
   *destination*|*destrepair*|*vpt0381*)
     if [ "$branch" != "dev/vpt038-destination-repair" ]; then
         echo "ERROR: destination repair filename requires dev/vpt038-destination-repair." >&2
@@ -86,6 +93,20 @@ git archive --format=tar "$commit" | tar -xf - -C "$work"
     # A different filename alone does not establish the themed build.
     # Refuse to produce a misleading VPT036 binary if this compiled ELF
     # does not contain the new UI and its explicit on-screen version ID.
+    if [ "$branch" = "dev/vpt040-startup-cache-and-ui" ]; then
+        for required in 'VPT040-Preload' 'INDEXING SD / SAVES' 'POKEDEX / LOADING' 'Pokemon Save Manager' 'MAIN MENU'; do
+            if ! grep -aFq "$required" "$work/PKTool.elf"; then
+                echo "ERROR: VPT040 ARM9 marker missing: $required" >&2
+                exit 1
+            fi
+        done
+        if grep -aFq 'VPT036-Unova' "$work/PKTool.elf" ||
+           grep -aFq 'VPT006 ARM9 read-only probe' "$work/PKTool.elf"; then
+            echo "ERROR: obsolete startup diagnostic/UI linked into VPT040" >&2
+            exit 1
+        fi
+        echo "PASS: VPT040 startup preload, full Unova loading panels and compact art"
+    fi
     if [ "$branch" = "dev/vpt038-destination-repair" ]; then
         for required in 'VPT038-DestRepair' 'Destination repair is optional' 'Pokemon Save Manager' 'MAIN MENU'; do
             if ! grep -aFq "$required" "$work/PKTool.elf"; then
