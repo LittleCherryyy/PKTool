@@ -374,6 +374,15 @@ int main() {
         REQUIRE(afterD->readBoxSlot(0,0,broken.data())==sv::SlotState::Valid);
         const auto converted=pk::pk3::toPokemon(broken.data(),80);
         REQUIRE(converted.species==155&&converted.level==5&&converted.trainer.tid==12345);
+        // Submit the actual opt-in repaired PK3 to the independent pinned
+        // PKHeX legality audit, not just the existing synthetic good inputs.
+        if(const char* audit=std::getenv("VPT_PK3_AUDIT_DIR")) {
+            const auto filename=std::string(audit)+"/vpt038-repaired-exp.pk3";
+            auto* fp=std::fopen(filename.c_str(),"wb");
+            REQUIRE(fp!=nullptr);
+            REQUIRE(std::fwrite(approved.converted.data(),1,80,fp)==80);
+            REQUIRE(std::fclose(fp)==0);
+        }
         std::puts("PASS: VPT038 opt-in repaired candidate, exact source removal, original snapshots unchanged");
     }
     std::puts("PASS: staged Crystal to Ruby/Sapphire save round-trip; source compaction, exact destination, party and other boxes preserved; rejection cases passed");
