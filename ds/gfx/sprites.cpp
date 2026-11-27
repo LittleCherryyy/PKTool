@@ -15,19 +15,44 @@ constexpr int kMaxDimension = 128;
 }  // namespace
 
 bool SpriteStore::parse(const std::vector<uint8_t>& bytes, int& width, int& height, std::vector<uint16_t>& pixels) {
-    if (bytes.size() < 8 || bytes[0] != 'P' || bytes[1] != 'K' || bytes[2] != 'S' || bytes[3] != '1') {
-        return false;
+    if (bytes.size() < 8 || bytes[0] != 'P' || bytes[1] != 'K' || bytes[2] != 'S' ||
+        (bytes[3] != '1' && bytes[3] != '2')) return false;
+    width=util::readU16(&bytes[4]);
+    height=util::readU16(&bytes[6]);
+    if(width<=0||height<=0||width>kMaxDimension||height>kMaxDimension) return false;
+    const size_t count=static_cast<size_t>(width)*height;
+    if(bytes[3]=='1') {
+        if(bytes.size()<8+count*2) return false;
+        pixels.resize(count);
+        for(size_t i=0;i<count;++i) pixels[i]=util::readU16(&bytes[8+i*2]);
+        return true;
     }
-    width = util::readU16(&bytes[4]);
-    height = util::readU16(&bytes[6]);
-    if (width <= 0 || height <= 0 || width > kMaxDimension || height > kMaxDimension ||
-        bytes.size() < 8 + static_cast<size_t>(width * height * 2)) {
-        return false;
+    // PKS2: compact lossless 16-bit RLE. Each control byte packs 1..128
+    // pixels: bit7=repeat a 16-bit colour, otherwise raw literal colours.
+    // Unlike PNG/zlib this has no extra library, heap or CPU setup on ARM9.
+    // Decode into a local vector so malformed packs never poison the cache.
+    std::vector<uint16_t> decoded(count);
+    size_t offset=8,at=0;
+    while(at<count) {
+        if(offset>=bytes.size()) return false;
+        const uint8_t token=bytes[offset++];
+        const size_t n=static_cast<size_t>(token&0x7F)+1;
+        if(n>count-at) return false;
+        if(token&0x80) {
+            if(offset+2>bytes.size()) return false;
+            const uint16_t colour=util::readU16(&bytes[offset]);
+            offset+=2;
+            std::fill(decoded.begin()+at,decoded.begin()+at+n,colour);
+        } else {
+            if(offset+2*n>bytes.size()) return false;
+            for(size_t i=0;i<n;++i)
+                decoded[at+i]=util::readU16(&bytes[offset+2*i]);
+            offset+=2*n;
+        }
+        at+=n;
     }
-    pixels.resize(static_cast<size_t>(width * height));
-    for (size_t i = 0; i < pixels.size(); ++i) {
-        pixels[i] = util::readU16(&bytes[8 + i * 2]);
-    }
+    if(offset!=bytes.size()) return false;
+    pixels=std::move(decoded);
     return true;
 }
 
