@@ -164,10 +164,10 @@ void App::drawTransferRecovery(Canvas& top,Canvas& bottom) {
         if(transportResultMons_.size()>10)
             bottom.text(kFontSmall,0,101,256,Align::Center,"L/R: "+std::to_string(transportResultPage_+1)+"/"+std::to_string((transportResultMons_.size()+9)/10),kText);
         bottom.roundRect(18,109,220,44,kAccent,kPanel,2);
-        bottom.text(kFontLarge,18,117,220,Align::Center,"Return to main menu",kText);
-        bottom.text(kFontSmall,18,134,220,Align::Center,"A / B / X / START",kMuted);
+        bottom.text(kFontLarge,18,117,220,Align::Center,"Continue",kText);
+        bottom.text(kFontSmall,18,134,220,Align::Center,"Press A to continue",kMuted);
         zones_.push_back({18,109,220,44,kKeyA});
-        bottom.text(kFontSmall,0,162,256,Align::Center,"Finishes and archives the transfer.",kMuted);
+        bottom.text(kFontSmall,0,162,256,Align::Center,"Archives transfer and returns to main menu.",kMuted);
 #else
         bottom.text(kFontSmall,0,112,256,Align::Center,"Write-enabled build needed to finish.",kYellow);
 #endif
