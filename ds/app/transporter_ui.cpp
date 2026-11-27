@@ -274,7 +274,8 @@ void App::openTransporter() {
         showMessage("Transporter","Close the current save first.");
         return;
     }
-    sprites_.clear();
+    // Keep the <=128 KiB warmed artwork and pack indices until the reviewed
+    // two-save transaction, where it is freed before allocating large buffers.
     transportSave_.reset();
     transportSourceBytes_.clear();transportDestBytes_.clear();transportReview_.reset();
     transportSource_.clear();transportDest_.clear();
@@ -380,7 +381,17 @@ void App::clearStartupImages() {
 // Large Gen IV/V data and all journal/backup files are excluded. Saves are
 // verified again from disk before ANY transaction; this is never a write cache.
 void App::tickStartupPreload() {
-    if(!scanned_ || preloadIndex_>=saveFiles_.size()) return;
+    if(!scanned_) return;
+    // First finish the bounded save cache. Only after that prewarm actual art
+    // on separate frames to keep the Home animation responsive.
+    if(preloadIndex_>=saveFiles_.size()) {
+        if(preloadArtIndex_<preloadArtQueue_.size()) {
+            const auto& art=preloadArtQueue_[preloadArtIndex_++];
+            sprites_.get(art.kind.c_str(),art.species);
+            redraw_=true;
+        }
+        return;
+    }
     constexpr size_t kMaxCacheBytes=384u*1024u;
     constexpr size_t kMaxCacheFiles=8;
     const auto& entry=saveFiles_[preloadIndex_++];
@@ -400,6 +411,34 @@ void App::tickStartupPreload() {
     if(io::readFile(entry.path,image) && image.size()==static_cast<size_t>(size)) {
         preloadedBytes_+=image.size();
         preloadedImages_.push_back({entry.path,size,modified,std::move(image)});
+        // One image per idle frame; the total decoded sprite budget remains
+        // enforced by SpriteStore (128 KiB). Prepare a few high-value covers.
+        if(preloadArtQueue_.size()<8)
+            preloadArtQueue_.push_back({"front",saves::coverSpecies(entry.version)});
+        if(generation<=2 && preloadArtQueue_.size()<8) {
+            auto source=saves::loadSaveFile(preloadedImages_.back().bytes);
+            if(source) {
+                const auto detected=visual::resolve(entry.path,entry.game,source->language()==1);
+                const bool certain=detected.choices.size()==1 ||
+                                   detected.evidence==visual::Evidence::Filename;
+                if(certain) {
+                    for(int b=0;b<source->boxCount();++b) {
+                        bool found=false;
+                        for(int slot=0;slot<source->boxSlotCount();++slot) {
+                            std::array<uint8_t,pokemon::entity::kMaxPartySize> raw{};
+                            if(source->readBoxSlot(b,slot,raw.data())!=saves::SlotState::Valid) continue;
+                            const uint8_t fmt=source->format();
+                            raw[fmt==1?pokemon::pk1::kLanguageOffset:pokemon::pk2::kLanguageOffset]=source->language();
+                            const auto mon=pokemon::entity::decode(fmt,raw.data(),source->storedSize());
+                            const char* kind=visual::spriteKind({detected.suggested,source->language()==1},mon.shiny);
+                            if(kind && mon.species) preloadArtQueue_.push_back({kind,mon.species});
+                            found=true;break;
+                        }
+                        if(found) break;
+                    }
+                }
+            }
+        }
     }
     redraw_=true;
 }
