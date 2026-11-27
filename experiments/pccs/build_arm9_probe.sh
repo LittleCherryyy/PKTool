@@ -44,10 +44,10 @@ s = p.read_text()
 # of an older VPT036 ROM with the same generic "PKTool" display name.
 banner = "GAME_TITLE     := PKTool"
 assert s.count(banner) == 1
-s = s.replace(banner, "GAME_TITLE     := PKTool V38D")
+s = s.replace(banner, "GAME_TITLE     := PKTool V040")
 subtitle = "GAME_SUBTITLE1 := Pokemon save editor"
 assert s.count(subtitle) == 1
-s = s.replace(subtitle, "GAME_SUBTITLE1 := Destination Repair")
+s = s.replace(subtitle, "GAME_SUBTITLE1 := Fast startup and Unova")
 a = "LIBDIRS := $(LIBNDS) $(PORTLIBS)"
 b = "LIBS := -lfilesystem -lfat -lnds9"
 assert s.count(a) == s.count(b) == 1
@@ -56,7 +56,7 @@ p = pathlib.Path("ds/main.cpp")
 s = p.read_text()
 a = "int main() {"
 assert s.count(a) == 1
-p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("config.storageReady = fatInitDefault();", "config.storageReady = fatInitDefault();\n    config.transporterPreview = isDSiMode();\n    if (config.transporterPreview) {\n        config.scanRoot = \"sd:/\";\n        config.dataDir = \"sd:/PKTOOL\";\n    }\n    config.version = \"VPT038-DestRepair\";"))
+p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("config.storageReady = fatInitDefault();", "config.storageReady = fatInitDefault();\n    config.transporterPreview = isDSiMode();\n    if (config.transporterPreview) {\n        config.scanRoot = \"sd:/\";\n        config.dataDir = \"sd:/PKTOOL\";\n    }\n    config.version = \"VPT040-Preload\";"))
 pathlib.Path("ds/vpt_arm9_bridge.cpp").write_text('#include "../experiments/pccs/pccs_bridge.cpp"\n')
 pathlib.Path("ds/vpt_arm9_stage.cpp").write_text('#include "../experiments/pccs/stage_transfer.cpp"\n')
 pathlib.Path("ds/vpt_arm9_journal.cpp").write_text('#include "../experiments/pccs/transfer_journal.cpp"\n')
@@ -65,6 +65,9 @@ PY
 # Pinned historical art packs, streamed from the same PokeAPI sprite source
 # as the base editor; no persistent extra runtime memory for the whole pack.
 python3 tools/build_transport_sprites.py assets/nitrofs/sprites
+# Smaller .nds shortens the blank period BEFORE ARM9 main() runs, which
+# no in-game splash can control. RLE is bit-perfect; old PKS1 remains valid.
+python3 tools/compact_sprite_packs.py assets/nitrofs/sprites
 make -j2
 "$arm-size" PKTool.elf
 "$arm-nm" -C PKTool.elf > "$work/symbols"
