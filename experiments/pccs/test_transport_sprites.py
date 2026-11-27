@@ -3,6 +3,10 @@
 import importlib.util
 import pathlib
 import struct
+import os
+import tempfile
+import unittest.mock
+import urllib.error
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -47,4 +51,27 @@ result = sprites.convert(png)
 assert result[:4] == b"PKS1"
 assert struct.unpack_from("<HH", result, 4) == (1, 1)
 assert struct.unpack_from("<H", result, 8) == (0x8000 | (31 << 5),)
-print("PASS: 15 exact edition art packs, distinct shiny sheets, safe JP Blue fallback, PNG/PKS1 conversion")
+# VPT035 Windows/MSYS2 regression: the private archive builder must reuse
+# already converted art and never repeatedly fetch a pinned HTTP 404.
+with tempfile.TemporaryDirectory(prefix="vpt-sprite-cache-") as tmp:
+    job = ("transport-crystal", "generation-ii/crystal/transparent", 25)
+    missing_job = ("transport-crystal", "generation-ii/crystal/transparent", 26)
+    with unittest.mock.patch.dict(os.environ, {"VPT_SPRITES_CACHE": tmp}):
+        with unittest.mock.patch.object(sprites, "download", return_value=png) as fetch:
+            kind, number, blob, error = sprites.get(job)
+            assert kind == "transport-crystal" and number == 25
+            assert blob == result and error is None
+            assert fetch.call_count == 1
+        with unittest.mock.patch.object(sprites, "download",
+                                        side_effect=AssertionError("cache miss")):
+            assert sprites.get(job) == (kind, number, result, None)
+        err = urllib.error.HTTPError("http://invalid/26.png", 404, "missing", None, None)
+        with unittest.mock.patch.object(sprites, "download", side_effect=err) as fetch:
+            kind, number, blob, error = sprites.get(missing_job)
+            assert blob is None and error == "HTTP 404"
+            assert fetch.call_count == 1
+        with unittest.mock.patch.object(sprites, "download",
+                                        side_effect=AssertionError("404 retried")):
+            assert sprites.get(missing_job)[2] is None
+
+print("PASS: 15 edition art packs, PNG/PKS1, persistent cache and pinned HTTP 404 fallback")
