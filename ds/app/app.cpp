@@ -1045,7 +1045,14 @@ bool App::openSave(const std::string& path) {
     unsaved_ = false;
     menuOpen_ = false;
     moving_ = false;
+    // Keep the bounded (<128 KiB) warmed art on DSi while viewing a save.
+    // Continue releasing it on regular DS hardware or under heap pressure.
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(!config_.transporterPreview ||
+       (config_.freeMemory && config_.freeMemory()<2u*1024u*1024u)) sprites_.clear();
+#else
     sprites_.clear();
+#endif
     std::vector<uint8_t> bytes;
     bool cached=false;
 #ifdef VPT_TRANSPORTER_PREVIEW
@@ -3019,8 +3026,9 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
         const std::string catalogStatus=transportScan_?
             "INDEXING SD / SAVES":!scanned_?"PREPARING SAVES":
             preloadIndex_<saveFiles_.size()?
-                "PRELOADING "+std::to_string(preloadIndex_)+"/"+std::to_string(saveFiles_.size()):
-                std::to_string(saveFiles_.size())+" SAVES INDEXED";
+                "CACHING "+std::to_string(preloadIndex_)+"/"+std::to_string(saveFiles_.size()):
+            preloadArtIndex_<preloadArtQueue_.size()?"PREPARING SPRITES":
+                std::to_string(saveFiles_.size())+" SAVES READY";
         top.text(kFontSmall,0,179,256,Align::Center,catalogStatus,kMuted);
     }
 #endif
