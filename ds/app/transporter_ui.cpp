@@ -95,7 +95,8 @@ bool readImage(const std::string& path,std::vector<uint8_t>& bytes) {
 }
 uint8_t languageHint(std::string path) {
     for(auto& c:path) c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if(path.find("(japan)")!=std::string::npos || path.find("(jp)")!=std::string::npos) return 1;
+    // Do not override the save's Japanese/non-Japanese encoding layout
+    // using filename hints. That would corrupt decoded character data.
     if(path.find("(france)")!=std::string::npos || path.find("(fr)")!=std::string::npos) return 3;
     if(path.find("(italy)")!=std::string::npos || path.find("(it)")!=std::string::npos) return 4;
     if(path.find("(germany)")!=std::string::npos || path.find("(de)")!=std::string::npos) return 5;
@@ -732,26 +733,74 @@ void App::updateTransporter(const Input& in) {
         refreshTransportNames();
         return;
     }
-    int count=static_cast<int>(transportRows_.size());
-    if(in.repeated&kKeyUp) transportCursor_=wrap(transportCursor_-1,count);
-    if(in.repeated&kKeyDown) transportCursor_=wrap(transportCursor_+1,count);
-    if(transportPhase_==TransportPhase::DestinationSlot&&count>0) {
+    const int count=static_cast<int>(transportRows_.size());
+    if(transportPhase_==TransportPhase::DestinationSlot && count>0) {
+        // Move in the 6-column destination box, never to an occupied slot or
+        // to a batch start that would exceed the verified available capacity.
         const auto here=transportPositions_[transportCursor_];
-        const int delta=(in.repeated&kKeyR)?1:(in.repeated&kKeyL)?-1:0;
-        if(delta) {
-            int chosen=transportCursor_;
-            if(delta>0) {
-                for(int i=transportCursor_+1;i<count;++i) if(transportPositions_[i].first>here.first) {chosen=i;break;}
-            } else {
-                for(int i=transportCursor_-1;i>=0;--i) if(transportPositions_[i].first<here.first) {chosen=i;break;}
+        auto nearestInBox=[&](int box,int slot,int exclude)->int {
+            int best=-1,dist=1000000;
+            for(int i=0;i<count;++i) {
+                const auto candidate=transportPositions_[i];
+                if(candidate.first!=box||i==exclude) continue;
+                const int d=candidate.second>slot?candidate.second-slot:slot-candidate.second;
+                if(d<dist) {dist=d;best=i;}
             }
-            transportCursor_=chosen;
+            return best;
+        };
+        if(in.repeated&(kKeyL|kKeyR)) {
+            const int direction=(in.repeated&kKeyR)?1:-1;
+            const int limit=transportBankDest_?bank::Bank::kBoxCount:transportSave_->boxCount();
+            for(int box=here.first+direction;box>=0&&box<limit;box+=direction) {
+                const int candidate=nearestInBox(box,here.second,-1);
+                if(candidate>=0) {transportCursor_=candidate;break;}
+            }
+        } else if(in.repeated&(kKeyLeft|kKeyRight)) {
+            const int dir=(in.repeated&kKeyRight)?1:-1;
+            for(int i=transportCursor_+dir;i>=0&&i<count;i+=dir) {
+                if(transportPositions_[i].first!=here.first) break;
+                if((dir>0 && transportPositions_[i].second>here.second) ||
+                   (dir<0 && transportPositions_[i].second<here.second)) {
+                    transportCursor_=i;break;
+                }
+            }
+        } else if(in.repeated&(kKeyUp|kKeyDown)) {
+            const int direction=(in.repeated&kKeyDown)?1:-1;
+            const int target=here.second+direction*6;
+            if(target>=0 && target<transportBoxSlots_) {
+                // Prefer the matching column, then the nearest available
+                // selectable start in the target row.
+                int best=-1, distance=1000000;
+                const int row=target/6;
+                for(int i=0;i<count;++i) {
+                    const auto candidate=transportPositions_[i];
+                    if(candidate.first!=here.first||candidate.second/6!=row) continue;
+                    const int d=candidate.second>target?candidate.second-target:target-candidate.second;
+                    if(d<distance){distance=d;best=i;}
+                }
+                if(best>=0) transportCursor_=best;
+            }
         }
-        if(in.repeated&kKeyLeft) transportCursor_=wrap(transportCursor_-1,count);
-        if(in.repeated&kKeyRight) transportCursor_=wrap(transportCursor_+1,count);
     } else {
-        if(in.repeated&kKeyL) transportCursor_=clampInt(transportCursor_-7,0,std::max(0,count-1));
-        if(in.repeated&kKeyR) transportCursor_=clampInt(transportCursor_+7,0,std::max(0,count-1));
+        if(in.repeated&kKeyUp) transportCursor_=wrap(transportCursor_-1,count);
+        if(in.repeated&kKeyDown) transportCursor_=wrap(transportCursor_+1,count);
+        if(transportPhase_==TransportPhase::SourceMon && count>0) {
+            // L/R jumps between real origin boxes rather than skipping an
+            // arbitrary 7 list entries; it does not change marked selections.
+            const int direction=(in.repeated&kKeyR)?1:(in.repeated&kKeyL)?-1:0;
+            if(direction) {
+                const int box=transportPositions_[transportCursor_].first;
+                for(int i=transportCursor_+direction;i>=0&&i<count;i+=direction) {
+                    if((direction>0&&transportPositions_[i].first>box)||
+                       (direction<0&&transportPositions_[i].first<box)) {
+                        transportCursor_=i;break;
+                    }
+                }
+            }
+        } else {
+            if(in.repeated&kKeyL) transportCursor_=clampInt(transportCursor_-7,0,std::max(0,count-1));
+            if(in.repeated&kKeyR) transportCursor_=clampInt(transportCursor_+7,0,std::max(0,count-1));
+        }
     }
     bool activate=in.pressed&kKeyA;
     int zone=in.touched?touchedZone(in):-1;
