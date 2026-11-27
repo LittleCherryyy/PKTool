@@ -299,16 +299,18 @@ std::unique_ptr<ReviewedTransfer> ReviewedTransfer::create(
 std::unique_ptr<ReviewedTransfer> ReviewedTransfer::createBatch(
     const std::string& source,const std::string& destination,
     const Bytes& expectedSource,const Bytes& expectedDestination,
-    const std::vector<TransferPair>& pairs,std::string& error,std::vector<std::string>& notes,uint8_t sourceLanguage,std::vector<EntryReview>* entries) {
-    ReviewedBatch batch(source,destination,expectedSource,expectedDestination,pairs,sourceLanguage);
+    const std::vector<TransferPair>& pairs,std::string& error,std::vector<std::string>& notes,uint8_t sourceLanguage,
+    std::vector<EntryReview>* entries,const std::vector<size_t>& repairIndices) {
+    ReviewedBatch batch(source,destination,expectedSource,expectedDestination,pairs,sourceLanguage,repairIndices);
     while(!batch.step()) {}
     return batch.take(error,notes,entries);
 }
 ReviewedBatch::ReviewedBatch(const std::string& source,const std::string& destination,
     const Bytes& expectedSource,const Bytes& expectedDestination,
-    const std::vector<TransferPair>& pairs,uint8_t sourceLanguage)
+    const std::vector<TransferPair>& pairs,uint8_t sourceLanguage,
+    const std::vector<size_t>& repairIndices)
     :source_(normalized(source)),destination_(normalized(destination)),sb_(expectedSource),
-     db_(expectedDestination),batch_(sb_,db_,pairs,sourceLanguage){}
+     db_(expectedDestination),batch_(sb_,db_,pairs,sourceLanguage,repairIndices){}
 size_t ReviewedBatch::completed() const{return batch_.completed();}
 size_t ReviewedBatch::total() const{return batch_.total();}
 const std::vector<EntryReview>& ReviewedBatch::entries() const{return done_?staged_.entries:batch_.entries();}
