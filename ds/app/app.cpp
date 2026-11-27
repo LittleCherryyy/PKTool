@@ -2958,7 +2958,7 @@ void App::drawSummary(Canvas& c, const pokemon::Pokemon* p, bool badData, bool b
 void App::drawHome(Canvas& top, Canvas& bottom) {
     // DSi-friendly visual theme: 256x192 native framebuffer, a few small
     // Canvas primitives, no new NitroFS assets, no GPU shaders or translucency.
-    drawChrome(top, "", "", 0);
+    drawChrome(top, "HOME", "", 0);
     top.roundRect(9, 43, 103, 99, kBorder, kPanelDark);
     top.circle(60, 91, 36, kDim);
     top.circle(60, 91, 32, kAccent);
