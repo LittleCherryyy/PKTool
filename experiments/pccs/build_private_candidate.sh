@@ -54,6 +54,20 @@ git archive --format=tar "$commit" | tar -xf - -C "$work"
     # A working ARM9 probe is required, not a base PKTool-only build.
     "$DEVKITARM/bin/arm-none-eabi-nm" -C PKTool.elf > "$work/candidate-symbols"
     grep -Fq 'App::commitTransporter(' "$work/candidate-symbols"
+    # A different filename alone does not establish the themed build.
+    # Refuse to produce a misleading VPT036 binary if this compiled ELF
+    # does not contain the new UI and its explicit on-screen version ID.
+    if [ "$branch" = "dev/vpt036-unova-ui" ]; then
+        if ! grep -aFq 'VPT036-Unova' "$work/PKTool.elf"; then
+            echo "ERROR: VPT036 version marker missing from linked ARM9 executable." >&2
+            exit 1
+        fi
+        if ! grep -aFq 'POKEDEX  /  UNOVA' "$work/PKTool.elf"; then
+            echo "ERROR: Unova main-menu UI marker missing from linked ARM9 executable." >&2
+            exit 1
+        fi
+        echo "PASS: VPT036-Unova UI and version confirmed in linked ARM9 executable"
+    fi
 )
 cp "$work/PKTool.nds" "$partial"
 test -s "$partial"
