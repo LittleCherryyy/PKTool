@@ -95,12 +95,28 @@ bool readImage(const std::string& path,std::vector<uint8_t>& bytes) {
 }
 uint8_t languageHint(std::string path) {
     for(auto& c:path) c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if(path.find("(japan)")!=std::string::npos || path.find("(jp)")!=std::string::npos) return 1;
     if(path.find("(france)")!=std::string::npos || path.find("(fr)")!=std::string::npos) return 3;
     if(path.find("(italy)")!=std::string::npos || path.find("(it)")!=std::string::npos) return 4;
     if(path.find("(germany)")!=std::string::npos || path.find("(de)")!=std::string::npos) return 5;
     if(path.find("(spain)")!=std::string::npos || path.find("(es)")!=std::string::npos) return 7;
     return 2;
 }
+// Gen I/II saves contain an identifiable JP/non-JP layout, but most do NOT
+// encode a complete EU/US language/region tag. Use that layout and an optional
+// explicit file label; do not claim an undecidable region was detected.
+std::string sourceLanguageLabel(uint8_t language,std::string path) {
+    if(language==1) return "Japanese";
+    for(auto& c:path) c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if(language==2 && (path.find("(usa)")!=std::string::npos ||
+                      path.find("(us)")!=std::string::npos))
+        return "English (USA)";
+    if(language==2 && (path.find("(europe)")!=std::string::npos ||
+                      path.find("(eu)")!=std::string::npos))
+        return "English (Europe)";
+    return data::languageName(language);
+}
+
 bool destinationReady(const saves::SaveSummary& s,size_t needed) {
     return s.boxIntegrityOk&&pokemon::pccs_bridge::supportedLanguage(s.language)&&
            s.freeBoxSlots>=0&&static_cast<size_t>(s.freeBoxSlots)>=needed;
@@ -458,6 +474,8 @@ void App::transporterSelectSave(bool source) {
         transportSource_=path; transportSourceBytes_=std::move(bytes);
         transportGeneration_=loaded->format();
         transportLanguage_=loaded->language()==1?1:languageHint(path);
+        // Non-Japanese Gen I/II layout does not itself prove a country.
+        // Non-English labels are hints from a clearly tagged filename only.
     } else { transportDest_=path; transportDestBytes_=std::move(bytes); }
     transportSave_=std::move(loaded);
     transportLoadPath_=path;
