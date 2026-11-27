@@ -74,6 +74,30 @@ TEST(sprite_file_parsing) {
     CHECK(!gfx::SpriteStore::parse({'X', 'K', 'S', '1', 1, 0, 1, 0, 0, 0}, w, h, pixels));
 }
 
+TEST(sprite_pks2_lossless_rle_and_corruption_guards) {
+    // Three red pixels and one transparent pixel, including a literal.
+    // The decoder must preserve RGB555 exactly as the old PKS1 did.
+    const std::vector<uint8_t> packed = {'P','K','S','2',4,0,1,0,
+                                         0x82,0x1F,0x80,0x00,0x00,0x00};
+    int w=0,h=0;
+    std::vector<uint16_t> pixels;
+    CHECK(gfx::SpriteStore::parse(packed,w,h,pixels));
+    CHECK_EQ(w,4); CHECK_EQ(h,1); CHECK_EQ(pixels.size(),4u);
+    CHECK_EQ(pixels[0],0x801F);
+    CHECK_EQ(pixels[1],0x801F);
+    CHECK_EQ(pixels[2],0x801F);
+    CHECK_EQ(pixels[3],0u);
+    auto truncated=packed;
+    truncated.pop_back();
+    CHECK(!gfx::SpriteStore::parse(truncated,w,h,pixels));
+    auto overshoot=packed;
+    overshoot[8]=0x84; // repeat five pixels in four-pixel image
+    CHECK(!gfx::SpriteStore::parse(overshoot,w,h,pixels));
+    auto trailing=packed;
+    trailing.push_back(0);
+    CHECK(!gfx::SpriteStore::parse(trailing,w,h,pixels));
+}
+
 TEST(ui_unova_theme_keeps_native_256x192_layout) {
     char pattern[] = "/tmp/pktool-unova-XXXXXX";
     std::string dir = mkdtemp(pattern);
