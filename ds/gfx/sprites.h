@@ -20,7 +20,7 @@
 // or one pack per kind, "<kind>.pak" (tools/pack_sprites.py), preferred:
 //   "PKSP" magic, u16 count, u16 0, then u32 offsets[count + 2] from the start
 //   of the file (species s is bytes offsets[s]..offsets[s + 1], empty if equal),
-//   then the PKS1 blobs. The pack stays open, so a sprite costs one seek and
+//   then PKS1 raw or PKS2 lossless-RLE blobs. The pack stays open, so a sprite costs one seek and
 //   one read instead of a file lookup among ~650 files (slow on a flashcart).
 // Kinds: "icons" (box icons), "front" and "front-shiny" (summary sprites),
 // and optional "transport-*.pak" historical editions. Open pack handles are
