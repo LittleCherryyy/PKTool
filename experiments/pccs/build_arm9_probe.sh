@@ -32,7 +32,8 @@ for cpp in "$work/pccs/source/"*.cpp; do
 done
 "$arm-ar" rcs "$work/arm9/lib/libpccs.a" "$work/obj/"*.o
 "$arm-size" "$work/arm9/lib/libpccs.a"
-# Keep the normal UI linked; insert a read-only diagnostic at startup.
+# Keep the normal UI linked. Call only the silent link-anchor at startup;
+# the interactive diagnostic is compiled only with VPT_BOOT_DIAGNOSTIC.
 # Changes below apply only to this disposable CI checkout, not the source tree.
 python3 - "$work/arm9" <<'PY'
 import pathlib, sys
@@ -47,7 +48,7 @@ p = pathlib.Path("ds/main.cpp")
 s = p.read_text()
 a = "int main() {"
 assert s.count(a) == 1
-p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("config.storageReady = fatInitDefault();", "config.storageReady = fatInitDefault();\n    config.transporterPreview = isDSiMode();\n    if (config.transporterPreview) {\n        config.scanRoot = \"sd:/\";\n        config.dataDir = \"sd:/PKTOOL\";\n    }\n    config.version = \"VPT036-Unova\";"))
+p.write_text(s.replace(a, "void vptArm9Probe();\n\nint main() {\n    vptArm9Probe();").replace("config.storageReady = fatInitDefault();", "config.storageReady = fatInitDefault();\n    config.transporterPreview = isDSiMode();\n    if (config.transporterPreview) {\n        config.scanRoot = \"sd:/\";\n        config.dataDir = \"sd:/PKTOOL\";\n    }\n    config.version = \"VPT037-NoProbe\";"))
 pathlib.Path("ds/vpt_arm9_bridge.cpp").write_text('#include "../experiments/pccs/pccs_bridge.cpp"\n')
 pathlib.Path("ds/vpt_arm9_stage.cpp").write_text('#include "../experiments/pccs/stage_transfer.cpp"\n')
 pathlib.Path("ds/vpt_arm9_journal.cpp").write_text('#include "../experiments/pccs/transfer_journal.cpp"\n')
@@ -69,5 +70,11 @@ grep -F 'inspectActiveJournal(' "$work/symbols"
 grep -F 'App::drawTransferRecovery(' "$work/symbols"
 grep -F 'archiveActiveJournal(' "$work/symbols"
 grep -F 'App::commitTransporter(' "$work/symbols"
+# The old startup diagnostic must not be present in the real linked image.
+# This still retains journal/PCCS link anchors and all existing gates above.
+if grep -aFq 'VPT006 ARM9 read-only probe' PKTool.elf; then
+    echo "ERROR: interactive ARM9 startup probe linked into private candidate" >&2
+    exit 1
+fi
 # Neither the linked NDS nor the static library is published by this workflow.
-echo "PASS: linked ARM9 probe (build only; no hardware execution)"
+echo "PASS: linked ARM9 Transporter, silent startup (no diagnostic screen)"
