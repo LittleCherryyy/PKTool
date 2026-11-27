@@ -159,7 +159,7 @@ int main() {
             press(app,ui::kKeyX); // third source
             press(app,ui::kKeyA); // selected entries -> destination
             press(app,ui::kKeyA); // Emerald
-            press(app,ui::kKeyDown);press(app,ui::kKeyA); // first destination slot 1
+            press(app,ui::kKeyRight);press(app,ui::kKeyA); // grid: slot 1, right from slot 0
             REQUIRE(same(ga,bs)&&same(eb,bd)&&!io::fileExists(bj));
             press(app,ui::kKeyStart); // no writes until second START
             REQUIRE(same(ga,bs)&&same(eb,bd)&&!io::fileExists(bj));
