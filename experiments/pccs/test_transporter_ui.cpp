@@ -107,8 +107,14 @@ int main() {
         ui::App app(cfg);
         REQUIRE(std::string(app.screenName())=="TransferRecovery");
         REQUIRE(!app.openSave(b));
-        REQUIRE(press(app,ui::kKeyStart)); // completed: never exit the homebrew
-        REQUIRE(std::string(app.screenName())=="Home");
+        // Completed transfer stays on the final screen until A (or touch).
+        // In particular START/B/X must not archive the journal by accident.
+        for(uint32_t key : {ui::kKeyStart,ui::kKeyB,ui::kKeyX}) {
+            REQUIRE(press(app,key));
+            REQUIRE(std::string(app.screenName())=="TransferRecovery");
+            REQUIRE(br::inspectActiveJournal(j).state==br::StartupState::Completed);
+        }
+        REQUIRE(press(app,ui::kKeyA)); // one Continue action archives and returns home
         REQUIRE(std::string(app.screenName())=="Home");
         REQUIRE(br::inspectActiveJournal(j).state==br::StartupState::Clear);
     }
