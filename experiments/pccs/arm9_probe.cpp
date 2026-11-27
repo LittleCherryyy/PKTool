@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Test-only ARM9 entry point. Never write a save or initialize FAT.
+// ARM9 link-anchor used by the private Transporter candidate. Never touch FAT.
+// An interactive probe can be enabled explicitly only in a diagnostic build.
 #include <nds.h>
 #include <cstdio>
 #include <array>
@@ -18,6 +19,10 @@ void vptArm9Probe() {
     auto volatile resume = &pk::pccs_bridge::resumeJournal;
     (void)prepare;
     (void)resume;
+    // The hardware build always calls this function to keep the PCCS/Journaling
+    // link anchors. Production/private candidates must never initialize the
+    // console overlay or pause for a test-screen confirmation.
+#if defined(VPT_BOOT_DIAGNOSTIC)
     consoleDemoInit();
     std::printf("VPT006 ARM9 read-only probe\n");
     pk::create4::Trainer trainer;
@@ -42,4 +47,5 @@ void vptArm9Probe() {
         scanKeys();
         if (keysDown() & KEY_A) break;
     }
+#endif  // VPT_BOOT_DIAGNOSTIC
 }
