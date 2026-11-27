@@ -115,7 +115,7 @@ public:
     bool transporterRepairConfirm() const {return transportPhase_==TransportPhase::RepairConfirm;}
     bool startupCatalogReady() const {return scanned_ && !transportScan_;}
     bool startupPreloadReady() const {
-        return startupCatalogReady() && preloadIndex_>=saveFiles_.size() &&
+        return startupCatalogReady() && preloadIndex_>=preloadOrder_.size() &&
                preloadArtIndex_>=preloadArtQueue_.size();
     }
     size_t startupCachedFiles() const {return preloadedImages_.size();}
@@ -216,10 +216,10 @@ private:
         std::vector<uint8_t> bytes;
     };
     std::vector<PreloadedImage> preloadedImages_;
+    std::vector<size_t> preloadOrder_; // GB/GBC first, then GBA, then other saves
     struct WarmSprite {std::string kind;uint16_t species=0;};
     std::vector<WarmSprite> preloadArtQueue_;
     size_t preloadedBytes_=0,preloadIndex_=0,preloadArtIndex_=0;
-    bool startupCatalogScan_=false;
     bool transportScanSource_=true,transportLoadSource_=true;
     int transportLoadBox_=-1;
     std::string transportLoadPath_;
