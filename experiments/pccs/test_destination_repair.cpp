@@ -69,7 +69,9 @@ int main() {
     // A destination 'repair' that would have to change the species, level
     // or source identity must be refused, not misrepresented as legal.
     auto impossible=target;
-    impossible.level=1; impossible.exp=0;
+    impossible.met.ball=0;
+    impossible.nickname="FAKE"; // cannot change the original trainer's Pokemon name
+
     auto invalid=raw;
     pk::pk3::applyPokemon(impossible,invalid.data());
     const auto impossibleFix=br::proposeDestinationRepair(source,pk::pk3::toPokemon(invalid.data(),80),
