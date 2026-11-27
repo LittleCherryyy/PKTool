@@ -17,8 +17,13 @@ void vptArm9Probe() {
     // Volatile function pointers ensure that linker GC cannot discard them.
     auto volatile prepare = &pk::pccs_bridge::prepareJournal;
     auto volatile resume = &pk::pccs_bridge::resumeJournal;
+    // Previously the interactive diagnostic called this preview. Without
+    // that console screen the linker needs an explicit, non-executed anchor
+    // to keep the exact PCCS entry point and its GB conversion dependency.
+    auto volatile preview = &pk::pccs_bridge::previewCrystalToRuby;
     (void)prepare;
     (void)resume;
+    (void)preview;
     // The hardware build always calls this function to keep the PCCS/Journaling
     // link anchors. Production/private candidates must never initialize the
     // console overlay or pause for a test-screen confirmation.
