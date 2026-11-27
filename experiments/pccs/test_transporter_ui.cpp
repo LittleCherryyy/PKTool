@@ -148,8 +148,10 @@ int main() {
         REQUIRE(put(ga,bs)&&put(eb,bd));
         {
             ui::App app(bc);
-            press(app,0); // render the central Home tile
-            press(app,ui::kKeyRight);press(app,ui::kKeyA);
+            press(app,0); // render the Unova Home tiles
+            press(app,ui::kKeyDown); // saves -> Bank
+            press(app,ui::kKeyDown); // Bank -> featured Transporter
+            press(app,ui::kKeyA);
             REQUIRE(std::string(app.screenName())=="Transporter");
             press(app,ui::kKeyA);
             press(app,ui::kKeyX); // first source
