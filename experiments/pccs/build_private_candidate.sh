@@ -23,7 +23,8 @@ if [ ! -x "$DEVKITARM/bin/arm-none-eabi-gcc" ]; then
 fi
 branch="$(git symbolic-ref --quiet --short HEAD || true)"
 if [ "$branch" != "dev/vpt035-private-test-build" ] && [ "$branch" != "dev/vpt036-unova-ui" ] &&
-   [ "$branch" != "dev/vpt037-no-startup-probe" ]; then
+   [ "$branch" != "dev/vpt037-no-startup-probe" ] &&
+   [ "$branch" != "dev/vpt037-items-2-5" ]; then
     echo "Checkout a private VPT035/VPT036/VPT037 test branch first (current: $branch)." >&2
     exit 2
 fi
@@ -58,6 +59,20 @@ git archive --format=tar "$commit" | tar -xf - -C "$work"
     # A different filename alone does not establish the themed build.
     # Refuse to produce a misleading VPT036 binary if this compiled ELF
     # does not contain the new UI and its explicit on-screen version ID.
+    if [ "$branch" = "dev/vpt037-items-2-5" ]; then
+        if ! grep -aFq 'VPT037-UI' "$work/PKTool.elf" ||
+           ! grep -aFq 'Pokemon Save Manager' "$work/PKTool.elf" ||
+           ! grep -aFq 'MAIN MENU' "$work/PKTool.elf"; then
+            echo "ERROR: English VPT037 interface or version missing from linked executable." >&2
+            exit 1
+        fi
+        if grep -aFq 'POKEDEX  /  UNOVA' "$work/PKTool.elf" ||
+           grep -aFq 'VPT006 ARM9 read-only probe' "$work/PKTool.elf"; then
+            echo "ERROR: obsolete home header or diagnostic remains in VPT037." >&2
+            exit 1
+        fi
+        echo "PASS: VPT037 English home, private identifier, silent boot"
+    fi
     if [ "$branch" = "dev/vpt037-no-startup-probe" ]; then
         if ! grep -aFq 'VPT037-NoProbe' "$work/PKTool.elf"; then
             echo "ERROR: VPT037 identity missing from linked ARM9 executable." >&2
