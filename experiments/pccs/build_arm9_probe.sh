@@ -40,6 +40,14 @@ import pathlib, sys
 root = pathlib.Path(sys.argv[1])
 p = pathlib.Path("Makefile")
 s = p.read_text()
+# Distinct icon/banner title in TWiLight Menu++ to prevent mistaken launch
+# of an older VPT036 ROM with the same generic "PKTool" display name.
+banner = "GAME_TITLE     := PKTool"
+assert s.count(banner) == 1
+s = s.replace(banner, "GAME_TITLE     := PKTool V037")
+subtitle = "GAME_SUBTITLE1 := Pokemon save editor"
+assert s.count(subtitle) == 1
+s = s.replace(subtitle, "GAME_SUBTITLE1 := Transporter English UI")
 a = "LIBDIRS := $(LIBNDS) $(PORTLIBS)"
 b = "LIBS := -lfilesystem -lfat -lnds9"
 assert s.count(a) == s.count(b) == 1
