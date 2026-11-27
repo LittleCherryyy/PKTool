@@ -1,5 +1,8 @@
 #include "ds/gfx/sprites.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "core/io/file_io.h"
 #include "core/util/bytes.h"
 
