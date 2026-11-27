@@ -1109,10 +1109,7 @@ void App::updateDialog(const Input& in) {
 
 bool App::updateHome(const Input& in) {
 #ifdef VPT_TRANSPORTER_PREVIEW
-    if (config_.transporterPreview && (in.pressed & kKeyY)) {
-        openTransporter();
-        return true;
-    }
+    // One visible Transporter menu entry; no redundant hidden Y shortcut.
 #endif
     int kTiles = 4;
 #ifdef VPT_TRANSPORTER_PREVIEW
@@ -2956,7 +2953,7 @@ void App::drawSummary(Canvas& c, const pokemon::Pokemon* p, bool badData, bool b
 void App::drawHome(Canvas& top, Canvas& bottom) {
     // DSi-friendly visual theme: 256x192 native framebuffer, a few small
     // Canvas primitives, no new NitroFS assets, no GPU shaders or translucency.
-    drawChrome(top, "POKEDEX  /  UNOVA", "", 0);
+    drawChrome(top, "", "", 0);
     top.roundRect(9, 43, 103, 99, kBorder, kPanelDark);
     top.circle(60, 91, 36, kDim);
     top.circle(60, 91, 32, kAccent);
@@ -2966,31 +2963,28 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
     top.vline(60, 123, 8, kAccent);
     drawBallEmblem(top, 60, 91, 17, kRed, kText);
 
-    top.text(kFontSmall, 120, 44, 125, Align::Left, "STATUS DO SISTEMA", kAccent);
+    top.text(kFontSmall, 120, 44, 125, Align::Left, "SYSTEM STATUS", kAccent);
     for (int i = 0; i < 3; ++i)
         top.roundRect(120, 61 + i * 27, 125, 23, kBorder, kPanel);
     top.text(kFontSmall, 126, 66, 114, Align::Left,
-             config_.storageReady ? "SD: PRONTO" : "SD: AUSENTE",
+             config_.storageReady ? "SD: READY" : "SD: MISSING",
              config_.storageReady ? kGreen : kRed);
-    top.text(kFontSmall, 126, 93, 114, Align::Left, "GERACOES I - V", kText);
+    top.text(kFontSmall, 126, 93, 114, Align::Left, "GENERATIONS I - V", kText);
 #ifdef VPT_TRANSPORTER_PREVIEW
     top.text(kFontSmall, 126, 120, 114, Align::Left,
              config_.transporterPreview ? "TRANSPORTER: ON" : "TRANSPORTER: OFF", kAccent);
 #else
-    top.text(kFontSmall, 126, 120, 114, Align::Left, "EDITOR DE SAVES", kText);
+    top.text(kFontSmall, 126, 120, 114, Align::Left, "SAVE EDITOR", kText);
 #endif
     top.hline(14, 152, 228, kBorder);
-    top.text(kFontLarge, 0, 156, 256, Align::Center, "Gerenciador Pokemon", kText);
-    // Make experimental builds identifiable without a duplicate "v" prefix.
-    const std::string versionLabel = config_.version.rfind("VPT", 0) == 0
-                                         ? config_.version : "v" + config_.version;
-    top.text(kFontSmall, 0, 173, 246, Align::Right, versionLabel, kMuted);
+    top.text(kFontLarge, 0, 156, 256, Align::Center, "Pokemon Save Manager", kText);
+    // Build number belongs to Settings > About, not the home screen.
 
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
     bottom.fillRect(0, 0, 256, 25, kTitleBar);
     bottom.fillRect(0, 0, 18, 24, kCursor);
     bottom.hline(6, 24, 244, kBorder);
-    bottom.text(kFontLarge, 25, 5, 219, Align::Left, "MENU PRINCIPAL", kText);
+    bottom.text(kFontLarge, 25, 5, 219, Align::Left, "MAIN MENU", kText);
 
     bool withTransporter = false;
 #ifdef VPT_TRANSPORTER_PREVIEW
@@ -2998,10 +2992,10 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
 #endif
     struct Tile { const char* label; const char* description; };
     const Tile tiles[] = {
-        {"Abrir save", "Jogos I - V"},
-        {"Backups", "Restaurar"},
-        {"Banco", "Caixas na SD"},
-        {"Opcoes", "Configurar"},
+        {"Open Save", "Games I - V"},
+        {"Backups", "Restore"},
+        {"Bank", "SD storage"},
+        {"Settings", "Options"},
         {"Poke Transporter", "GB/GBC  >  GBA"},
     };
     for (int i = 0; i < (withTransporter ? 5 : 4); ++i) {
@@ -3053,12 +3047,12 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
     }
 #ifdef VPT_TRANSPORTER_PREVIEW
     if (withTransporter) {
-        drawHints(bottom, {{"A", "Abrir"}, {"Y", "Transporter"}, {"START", "Sair"}},
-                  {kKeyA, kKeyY, kKeyStart});
+        drawHints(bottom, {{"A", "Open"}, {"+", "Move"}, {"START", "Exit"}},
+                  {kKeyA, 0, kKeyStart});
         return;
     }
 #endif
-    drawHints(bottom, {{"A", "Abrir"}, {"+", "Mover"}, {"START", "Sair"}},
+    drawHints(bottom, {{"A", "Open"}, {"+", "Move"}, {"START", "Exit"}},
               {kKeyA, 0, kKeyStart});
 }
 
@@ -3066,7 +3060,7 @@ void App::drawBrowser(Canvas& top, Canvas& bottom) {
 #ifdef VPT_TRANSPORTER_PREVIEW
     if(transportScan_) {drawTransporter(top,bottom);return;}
 #endif
-    drawChrome(top, "GERENCIADOR DE SAVES", std::to_string(saveFiles_.size()) + " saves", kAccent);
+    drawChrome(top, "SAVE MANAGER", std::to_string(saveFiles_.size()) + " saves", kAccent);
     top.roundRect(4, kBodyTop + 3, 248, 150, kBorder, kPanel);
     if (saveFiles_.empty()) {
         top.text(kFontLarge, 4, 70, 248, Align::Center, "No Pok\xC3\xA9mon saves found", kText);
@@ -3116,7 +3110,7 @@ void App::drawBrowser(Canvas& top, Canvas& bottom) {
 
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
     bottom.roundRect(4, 4, 248, 168, kBorder, kPanel);
-    bottom.text(kFontSmall, 10, 5, "SELECIONE UM SAVE", kAccent);
+    bottom.text(kFontSmall, 10, 5, "SELECT A SAVE", kAccent);
     if (saveFiles_.empty()) {
         bottom.text(kFontSmall, 4, 80, 248, Align::Center, "Nothing here yet", kDim);
     }
