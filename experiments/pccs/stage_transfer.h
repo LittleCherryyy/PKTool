@@ -14,6 +14,10 @@ struct TransferPair { BoxSlot from; BoxSlot to; };
 struct EntryReview {
     Pokemon mon;
     bool ready=false;
+    // A repair is only offered after an independent preview of the exact
+    // converted bytes succeeds. No source save is modified by the repair.
+    bool repairAvailable=false, repaired=false;
+    std::vector<std::string> repairChanges;
     uint16_t returnedItem=0;
     std::string itemName, error;
     std::vector<std::string> notes;
@@ -32,7 +36,8 @@ struct StagedTransfer {
 class BatchStage {
 public:
     BatchStage(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
-               const std::vector<TransferPair>& pairs,uint8_t sourceLanguage=0);
+               const std::vector<TransferPair>& pairs,uint8_t sourceLanguage=0,
+               const std::vector<size_t>& repairIndices={});
     ~BatchStage();
     bool step();
     size_t completed() const;
@@ -47,7 +52,8 @@ private:
 // ROM metadata or explicit user selection; Ruby/Sapphire share save format.
 StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,
                             const std::vector<uint8_t>& destination,
-                            const std::vector<TransferPair>& pairs, uint8_t sourceLanguage=0);
+                            const std::vector<TransferPair>& pairs, uint8_t sourceLanguage=0,
+                            const std::vector<size_t>& repairIndices={});
 StagedTransfer stageCrystalToRuby(const std::vector<uint8_t>& source,
                                   const std::vector<uint8_t>& destination,
                                   BoxSlot from, BoxSlot to);
