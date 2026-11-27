@@ -4,6 +4,7 @@
 #include "core/pokemon/create4.h"
 #include "core/pokemon/entity.h"
 #include "core/pokemon/pk3.h"
+#include "core/pokemon/pk2.h"
 #include "core/saves/save_commit.h"
 #include "core/io/file_io.h"
 #include "tests/fake_gb_saves.h"
@@ -123,6 +124,60 @@ int main() {
         REQUIRE(br::inspectActiveJournal(j).state==br::StartupState::Completed);
         REQUIRE(!app.openSave(a));
         REQUIRE(!same(a,sb)&&!same(b,db));
+    }
+    // VPT038: explicit repair is inspectable, cancellable and only moves
+    // after a second PCCS review and the existing double-START commit.
+    {
+        const auto dir=root+"/repair-ui";
+        REQUIRE(io::makeDirectories(dir));
+        auto gs=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Crystal));
+        auto gba=sv::loadSaveFile(fake::blankGen3(sv::Game::RubySapphire));
+        REQUIRE(gs&&gba);
+        pk::create4::Trainer trainer;trainer.name="ASH";trainer.tid=12345;
+        trainer.version=41;trainer.language=2;
+        auto mon=pk::create4::newPokemon(trainer,155,5,255);mon.heldItem=0;
+        pk::create4::encode(mon,raw.data());
+        raw[pk::pk2::offset::kExp]=0;
+        raw[pk::pk2::offset::kExp+1]=0;
+        raw[pk::pk2::offset::kExp+2]=1; // Level / EXP mismatch
+        REQUIRE(gs->writeBoxSlot(0,0,raw.data()));
+        gs->refreshChecksums();gba->refreshChecksums();
+        const auto before=gs->data(),dest=gba->data();
+        const auto source=dir+"/crystal.sav",target=dir+"/ruby.sav";
+        REQUIRE(put(source,before)&&put(target,dest));
+        ui::Config repairConfig=cfg;
+        repairConfig.scanRoot=dir;repairConfig.dataDir=dir+"/PKTOOL";
+        const auto repairJournal=repairConfig.dataDir+"/transporter/active.vpt";
+        ui::App app(repairConfig);
+        press(app,ui::kKeyY);
+        for(int i=0;i<4;++i) press(app,ui::kKeyA);
+        REQUIRE(std::string(app.screenName())=="Transporter");
+        REQUIRE(!app.transporterRepairConfirm());
+        press(app,ui::kKeyY);
+        REQUIRE(app.transporterRepairConfirm());
+        REQUIRE(same(source,before)&&same(target,dest)&&!io::fileExists(repairJournal));
+        press(app,ui::kKeyB);
+        REQUIRE(!app.transporterRepairConfirm());
+        REQUIRE(same(source,before)&&same(target,dest)&&!io::fileExists(repairJournal));
+        press(app,ui::kKeyY);
+        REQUIRE(app.transporterRepairConfirm());
+        press(app,ui::kKeyA); // approve conversion-only repair + re-review
+        REQUIRE(!app.transporterRepairConfirm());
+        REQUIRE(same(source,before)&&same(target,dest)&&!io::fileExists(repairJournal));
+        press(app,ui::kKeyStart);press(app,ui::kKeyStart);
+        REQUIRE(same(source,before)&&same(target,dest)&&!io::fileExists(repairJournal));
+        press(app,ui::kKeyA); // skip animation, execute the existing journal
+        REQUIRE(std::string(app.screenName())=="TransferRecovery");
+        REQUIRE(br::inspectActiveJournal(repairJournal).state==br::StartupState::Completed);
+        REQUIRE(!same(source,before)&&!same(target,dest));
+        REQUIRE(press(app,ui::kKeyA)); // archive and return home
+        REQUIRE(br::inspectActiveJournal(repairJournal).state==br::StartupState::Clear);
+        auto src=sv::loadSaveFile(before);
+        REQUIRE(src && src->readBoxSlot(0,0,raw.data())==sv::SlotState::Valid);
+        // The source's ORIGINAL broken entity is only retained in the backup,
+        // never rewritten with the repair before or after the transfer.
+        REQUIRE(raw[pk::pk2::offset::kExp+2]==1);
+        std::puts("PASS: VPT038 repair preview cancellation, explicit approval, re-review, journal and archive");
     }
     // Restart application before archiving; ordinary editor must stay locked.
     {
