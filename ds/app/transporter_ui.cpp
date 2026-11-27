@@ -353,15 +353,72 @@ void App::refreshSessionSave(const std::string& path) {
 void App::startTransportScan(bool source) {
     if(scanned_) return;
     transportScanSource_=source;
-    // One discovery of all supported generations, shared by both entry points.
+    // A single cooperative discovery starts on Home: menu entry MUST NOT
+    // throw away the work already completed in idle startup frames.
+    if(transportScan_) return;
     transportScan_.reset(new saves::IncrementalSaveScan(config_.scanRoot,3,5,{}));
+    startupCatalogScan_=screen_==Screen::Home;
 }
 void App::tickTransportScan() {
-    if(!transportScan_->step()) return;
+    if(!transportScan_ || !transportScan_->step()) return;
     saveFiles_=transportScan_->take();transportScan_.reset();
     scanned_=true;syncTransportCatalog();
+    preloadIndex_=0;
+    if(screen_==Screen::Home) {
+        // Startup preload does not navigate on behalf of the player.
+        redraw_=true;
+        return;
+    }
     if(screen_==Screen::Browser) {browserCursor_=browserScroll_=0;return;}
-    showTransportSaveList(transportScanSource_);
+    if(screen_==Screen::Transporter) showTransportSaveList(transportScanSource_);
+}
+void App::clearStartupImages() {
+    preloadedImages_.clear();
+    preloadedBytes_=0;
+}
+// Keep only compact, immutable snapshots for initial menu browsing.
+// Large Gen IV/V data and all journal/backup files are excluded. Saves are
+// verified again from disk before ANY transaction; this is never a write cache.
+void App::tickStartupPreload() {
+    if(!scanned_ || preloadIndex_>=saveFiles_.size()) return;
+    constexpr size_t kMaxCacheBytes=384u*1024u;
+    constexpr size_t kMaxCacheFiles=8;
+    const auto& entry=saveFiles_[preloadIndex_++];
+    const unsigned generation=saves::gameGeneration(entry.game);
+    if(generation<1 || generation>3 ||
+       preloadedImages_.size()>=kMaxCacheFiles ||
+       entry.fileSize<=0 || static_cast<size_t>(entry.fileSize)>0x20100u ||
+       static_cast<size_t>(entry.fileSize)>kMaxCacheBytes-preloadedBytes_) {
+        redraw_=true;return;
+    }
+    long size=0,modified=0;
+    if(!io::fileStamp(entry.path,size,modified) ||
+       size!=entry.fileSize || modified!=entry.modified) {
+        redraw_=true;return;
+    }
+    std::vector<uint8_t> image;
+    if(io::readFile(entry.path,image) && image.size()==static_cast<size_t>(size)) {
+        preloadedBytes_+=image.size();
+        preloadedImages_.push_back({entry.path,size,modified,std::move(image)});
+    }
+    redraw_=true;
+}
+bool App::readStartupImage(const std::string& path,std::vector<uint8_t>& image) {
+    std::string normalized=path;
+#ifdef ARM9
+    if(normalized.rfind("sd:",0)==0) normalized.erase(0,3);
+#endif
+    for(const auto& cached:preloadedImages_) {
+        if(cached.path!=normalized) continue;
+        long size=0,modified=0;
+        if(io::fileStamp(path,size,modified) &&
+           size==cached.fileSize && modified==cached.modified) {
+            image=cached.bytes;
+            return true;
+        }
+        break; // Changed on SD: let ordinary read and validation handle it.
+    }
+    return false;
 }
 void App::cancelTransportBusy() {
     if(transportBatch_) {
@@ -465,7 +522,9 @@ void App::transporterSelectSave(bool source) {
         for(auto& save:transportCatalog_) if(save.path==current.path) save.boxIntegrityOk=false;
         transportRows_[transportCursor_]=destinationRow(current,transportSelected_.size());
     };
-    if(!readImage(path,bytes)) { invalidateDestination();transportMessage_="Cannot read save - choose another";return; }
+    if(!readStartupImage(path,bytes) && !readImage(path,bytes)) {
+        invalidateDestination();transportMessage_="Cannot read save - choose another";return;
+    }
     auto loaded=saves::loadSaveFile(bytes);
     if(!loaded || !saves::validateSave(*loaded) || !pokemon::pccs_bridge::supportedLanguage(loaded->language()) ||
        (source?(loaded->format()!=1 && loaded->format()!=2):loaded->format()!=3)) {
@@ -600,6 +659,7 @@ void App::transporterPreview() {
     const auto& pairs=transportReviewPairs_;
     transportConfirm_=false;
     transportSave_.reset();sprites_.clear();
+    clearStartupImages(); // release preload RAM before retaining both 128KB snapshots
     transportNotes_.clear();transportAccepted_=false;
     transportEntries_.clear();transportReview_.reset();
     transportBatch_=std::make_unique<br::ReviewedBatch>(transportSource_,transportDest_,
