@@ -1089,7 +1089,11 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
             if(marked) bottom.text(kFontSmall,11,y+4,12,Align::Center,"X",kGreen);
             const auto& mon=transportMons_[index];
             pokemon::Pokemon icon;icon.species=mon.species;
+            // Icons may be 32x32; clip them to the compact 22x20 list slot
+            // so they never paint over the mark box or adjacent rows.
+            bottom.setClip(26,y+1,22,20);
             drawIcon(bottom,26,y+1,22,20,icon,false);
+            bottom.resetClip();
             const std::string label=slotLabel(pos.first,pos.second)+" "+mon.nickname+" Lv"+std::to_string(mon.level);
             const Color ink=active?kText:marked?kGreen:kMuted;
             if(active) marqueeActive_|=drawMarquee(bottom,51,y+4,194,Align::Left,label,ink,frame_-marqueeStart_);
