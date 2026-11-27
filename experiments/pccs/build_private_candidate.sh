@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VPT035: private build for the hardware owner, never a CI/public artifact.
+# VPT035/VPT036: private build for the hardware owner, never CI/public.
 # This script redistributes no PCCS files and does not modify the Git checkout.
 set -euo pipefail
 
@@ -22,8 +22,8 @@ if [ ! -x "$DEVKITARM/bin/arm-none-eabi-gcc" ]; then
     exit 2
 fi
 branch="$(git symbolic-ref --quiet --short HEAD || true)"
-if [ "$branch" != "dev/vpt035-private-test-build" ]; then
-    echo "Checkout dev/vpt035-private-test-build first (current: $branch)." >&2
+if [ "$branch" != "dev/vpt035-private-test-build" ] && [ "$branch" != "dev/vpt036-unova-ui" ]; then
+    echo "Checkout a private VPT035/VPT036 test branch first (current: $branch)." >&2
     exit 2
 fi
 commit="$(git rev-parse --verify HEAD)"
@@ -43,7 +43,7 @@ work="$(mktemp -d)"
 partial="$output.partial.$$"
 trap 'rm -rf "$work"; rm -f "$partial"' EXIT
 
-echo "Private VPT035 build from commit: $commit"
+echo "Private PKTool Transporter build ($branch) from commit: $commit"
 echo "Changes in your working tree are NOT included in the test binary."
 # Source-only snapshot; no downloaded PCCS subtree is copied into this repo.
 git archive --format=tar "$commit" | tar -xf - -C "$work"
