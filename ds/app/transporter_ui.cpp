@@ -1124,7 +1124,14 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         }
         top.text(kFontSmall,8,151,240,Align::Center,"Choice remembered until restart",kMuted);
         bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
-        drawList(bottom,transportRows_,transportCursor_,transportScroll_,5,8,246,28,5);
+        for(int row=0;row<5 && row<static_cast<int>(transportRows_.size());++row) {
+            const int y=8+row*29;
+            drawUnovaTile(bottom,5,y,246,27,row==transportCursor_);
+            if(row==transportCursor_)
+                marqueeActive_|=drawMarquee(bottom,13,y+5,230,Align::Left,transportRows_[row],kText,frame_-marqueeStart_);
+            else bottom.text(kFontSmall,13,y+5,230,Align::Left,transportRows_[row],kMuted);
+            zones_.push_back({5,y,246,27,kZoneItem+row});
+        }
         drawHints(bottom,{{"A","Confirm"},{"+","Move"},{"B","Back"}},{kKeyA,0,kKeyB});
         return;
     }
@@ -1184,9 +1191,48 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         top.roundRect(19,121,218,13,kBorder,kPanelDark);
         if(scan) top.fillRect(22+static_cast<int>((frame_*3)%183),124,30,7,kAccent);
         else top.fillRect(22,124,212*transportLoadBox_/std::max(1,transportSave_->boxCount()),7,kAccent);
-        bottom.clear(kBackground);
-        bottom.text(kFontSmall,0,74,256,Align::Center,"Reading only - no save changes",kMuted);
+        bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
+        bottom.fillRect(0,0,256,24,kTitleBar);
+        bottom.fillRect(0,0,16,23,kCursor);
+        bottom.text(kFontLarge,25,5,227,Align::Left,"POKEDEX / LOADING",kText);
+        bottom.roundRect(12,40,232,99,kBorder,kPanel);
+        bottom.text(kFontLarge,20,59,216,Align::Center,
+                    scan?"INDEXING SAVES":"PREPARING POKEMON BOXES",kAccent);
+        bottom.text(kFontSmall,20,92,216,Align::Center,
+                    "Please keep the SD card inserted",kText);
+        bottom.text(kFontSmall,20,116,216,Align::Center,
+                    "Read only - no save changes",kMuted);
         drawHints(bottom,{{"B","Cancel"}},{kKeyB});
+        return;
+    }
+    if(transportPhase_==TransportPhase::Source) {
+        drawChrome(top,"GB/GBC / SOURCE",std::to_string(transportSaves_.size())+" SAVES",kAccent);
+        top.roundRect(5,36,246,136,kBorder,kPanel);
+        top.text(kFontLarge,9,45,238,Align::Center,"Select original Game Boy save",kText);
+        top.hline(11,68,234,kBorder);
+        top.text(kFontSmall,11,79,234,Align::Left,"Red / Green / Blue / Yellow",kAccent);
+        top.text(kFontSmall,11,97,234,Align::Left,"Gold / Silver / Crystal",kAccent);
+        top.text(kFontSmall,11,122,234,Align::Left,
+                 "Game edition sprites are selected later",kMuted);
+        marqueeActive_|=drawMarquee(top,11,147,234,Align::Left,transportMessage_,kYellow,frame_-marqueeStart_);
+        bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
+        if(transportCursor_<transportScroll_) transportScroll_=transportCursor_;
+        if(transportCursor_>=transportScroll_+5) transportScroll_=transportCursor_-4;
+        for(int row=0;row<5&&transportScroll_+row<static_cast<int>(transportSaves_.size());++row) {
+            const int index=transportScroll_+row,y=5+33*row;
+            drawUnovaTile(bottom,4,y,248,31,index==transportCursor_);
+            const auto title=io::fileName(transportSaves_[index].path);
+            if(index==transportCursor_)
+                marqueeActive_|=drawMarquee(bottom,12,y+2,232,Align::Left,title,kText,frame_-marqueeStart_);
+            else bottom.text(kFontSmall,12,y+2,232,Align::Left,title,kText);
+            bottom.text(kFontSmall,12,y+17,232,Align::Left,
+                        transportSaves_[index].trainer,kMuted);
+            zones_.push_back({4,y,248,31,kZoneItem+index});
+        }
+        if(transportSaves_.empty())
+            bottom.text(kFontSmall,5,75,246,Align::Center,"No Gen I / II saves found",kYellow);
+        drawHints(bottom,{{"A","Select"},{"SELECT","Bank"},{"Y","History"},{"B","Back"}},
+                  {kKeyA,kKeySelect,kKeyY,kKeyB});
         return;
     }
     if(transportPhase_==TransportPhase::SourceMon&&!transportMons_.empty()) {
@@ -1407,7 +1453,17 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
     top.text(kFontSmall,9,151,238,Align::Center,"Unofficial conversion",kMuted);
     bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
     if(transportRows_.empty()) bottom.text(kFontLarge,0,80,256,Align::Center,"No eligible entries",kMuted);
-    else drawList(bottom,transportRows_,transportCursor_,transportScroll_,5,8,246,22,7);
+    else {
+        if(transportCursor_<transportScroll_) transportScroll_=transportCursor_;
+        if(transportCursor_>=transportScroll_+7) transportScroll_=transportCursor_-6;
+        for(int row=0;row<7&&transportScroll_+row<static_cast<int>(transportRows_.size());++row) {
+            const int index=transportScroll_+row,y=8+row*22;
+            drawUnovaTile(bottom,5,y,246,21,index==transportCursor_);
+            bottom.text(kFontSmall,11,y+3,234,Align::Left,transportRows_[index],
+                        index==transportCursor_?kText:kMuted);
+            zones_.push_back({5,y,246,21,kZoneItem+index});
+        }
+    }
     if(transportPhase_==TransportPhase::Review) {
 #ifdef VPT_TRANSPORTER_WRITE
         if(transportAccepted_) drawHints(bottom,{{"A","Recheck"},{"START","Move"},{"B","Cancel"}},{kKeyA,kKeyStart,kKeyB});
