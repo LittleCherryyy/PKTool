@@ -860,6 +860,7 @@ void App::updateTransporter(const Input& in) {
     if(!activate || count==0) return;
     switch(transportPhase_) {
         case TransportPhase::Edition:break;
+        case TransportPhase::RepairConfirm:break; // handled before generic navigation
         case TransportPhase::History:break;
         case TransportPhase::Source: pending_=Pending::TransferLoadSource;break;
         case TransportPhase::SourceMon: {
