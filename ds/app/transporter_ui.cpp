@@ -281,6 +281,7 @@ void App::openTransporter() {
     transportRows_.clear();transportNotes_.clear();transportPositions_.clear();
     transportSelected_.clear();transportMons_.clear();transportResultMons_.clear();
     transportEntries_.clear();transportReviewPairs_.clear();
+    transportRepairIndices_.clear();transportRepairFocus_=0;transportRepairScroll_=0;
     transportBoxSpecies_.clear();transportAnimating_=false;
     transportMessage_.clear();transportAccepted_=false;transportConfirm_=false;
     screen_=Screen::Transporter;
@@ -295,6 +296,7 @@ void App::showTransportSaveList(bool source,const std::string& message,const std
     std::vector<uint8_t>().swap(transportDestBytes_);
     transportDest_.clear();
     transportEntries_.clear();transportReviewPairs_.clear();transportResultMons_.clear();
+    transportRepairIndices_.clear();transportRepairFocus_=0;transportRepairScroll_=0;
     transportRows_.clear();transportNotes_.clear();transportPositions_.clear();
     transportMons_.clear();transportBoxSpecies_.clear();transportLoadBox_=-1;
     if(source) {
@@ -589,7 +591,7 @@ void App::transporterPreview() {
            static_cast<size_t>(transportCursor_)+transportSelected_.size()>transportPositions_.size()) {
             transportMessage_="Not enough empty slots from here";return;
         }
-        transportReviewPairs_.clear();
+        transportReviewPairs_.clear();transportRepairIndices_.clear();
         for(size_t i=0;i<transportSelected_.size();++i) {
             auto f=transportSelected_[i],t=transportPositions_[transportCursor_+i];
             transportReviewPairs_.push_back({{f.first,f.second},{t.first,t.second}});
@@ -601,7 +603,7 @@ void App::transporterPreview() {
     transportNotes_.clear();transportAccepted_=false;
     transportEntries_.clear();transportReview_.reset();
     transportBatch_=std::make_unique<br::ReviewedBatch>(transportSource_,transportDest_,
-        transportSourceBytes_,transportDestBytes_,pairs,transportLanguage_);
+        transportSourceBytes_,transportDestBytes_,pairs,transportLanguage_,transportRepairIndices_);
 }
 void App::tickTransportPreview() {
     if(!transportBatch_->step()) return;
@@ -639,6 +641,30 @@ void App::tickTransportPreview() {
     transportCursor_=transportScroll_=0;
 }
 void App::updateTransporter(const Input& in) {
+    if(transportPhase_==TransportPhase::RepairConfirm) {
+        const auto index=transportRepairFocus_;
+        if(index>=transportEntries_.size()||!transportEntries_[index].repairAvailable ||
+           transportEntries_[index].ready) {
+            transportPhase_=TransportPhase::Review;return;
+        }
+        const auto& changes=transportEntries_[index].repairChanges;
+        if(in.repeated&kKeyDown)
+            transportRepairScroll_=std::min(transportRepairScroll_+1,std::max(0,static_cast<int>(changes.size())-3));
+        if(in.repeated&kKeyUp)
+            transportRepairScroll_=std::max(0,transportRepairScroll_-1);
+        if(in.pressed&kKeyB) {
+            transportPhase_=TransportPhase::Review;transportMessage_="Repair cancelled - no changes";
+        } else if(in.pressed&kKeyA) {
+            if(std::find(transportRepairIndices_.begin(),transportRepairIndices_.end(),index)==transportRepairIndices_.end())
+                transportRepairIndices_.push_back(index);
+            transportPhase_=TransportPhase::Review;
+            transportCursor_=static_cast<int>(index);
+            // The exact original paths and bytes are rechecked by ReviewedBatch
+            // on the next frame. A repair never bypasses the journal.
+            pending_=Pending::TransferPreview;
+        }
+        return;
+    }
     if(transportPhase_==TransportPhase::Edition) {
         if(in.pressed&kKeyB) {
             const auto path=transportLoadPath_;
@@ -659,6 +685,17 @@ void App::updateTransporter(const Input& in) {
         const int pages=std::max(1,static_cast<int>((transportHistory_.pokemon.size()+9)/10));
         if(in.pressed&kKeyL) transportResultPage_=wrap(transportResultPage_-1,pages);
         if(in.pressed&kKeyR) transportResultPage_=wrap(transportResultPage_+1,pages);
+        return;
+    }
+    if(transportPhase_==TransportPhase::Review && !transportAccepted_ &&
+       (in.pressed&kKeyY) && transportCursor_>=0 &&
+       transportCursor_<static_cast<int>(transportEntries_.size())) {
+        const auto& selected=transportEntries_[transportCursor_];
+        if(!selected.ready && selected.repairAvailable) {
+            transportRepairFocus_=static_cast<size_t>(transportCursor_);
+            transportRepairScroll_=0;
+            transportPhase_=TransportPhase::RepairConfirm;
+        } else transportMessage_="No verified repair for this entry";
         return;
     }
     if(transportPhase_==TransportPhase::Source&&scanned_&&(in.pressed&kKeyY)) {openTransferHistory();return;}
@@ -721,6 +758,7 @@ void App::updateTransporter(const Input& in) {
         if(!ready.empty()&&ready.size()<transportReviewPairs_.size()) {
             // Explicitly re-review the subset, retaining original source/destination slots.
             transportReviewPairs_=std::move(ready);
+            transportRepairIndices_.clear(); // old indices are now invalid
             pending_=Pending::TransferPreview;
         }
         return;
