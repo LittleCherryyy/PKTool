@@ -114,9 +114,17 @@ int main() {
     top.text(gfx::kFontSmall, 0, 100, gfx::kScreenWidth, gfx::Align::Center, "Mounting SD card...",
              gfx::rgb(140, 160, 206));
     present(topVram, bottomVram);
+    // Guarantee one visible dark splash frame BEFORE synchronous FAT/NitroFS
+    // initialization. This cannot eliminate the loader's pre-main() white
+    // screen, but prevents our own SD mount from looking like a freeze.
+    swiWaitForVBlank();
 
     ui::Config config;
     config.storageReady = fatInitDefault();
+    top.text(gfx::kFontSmall, 0, 100, gfx::kScreenWidth, gfx::Align::Center,
+             "Preparing sprite index...", gfx::rgb(140, 160, 206));
+    present(topVram, bottomVram);
+    swiWaitForVBlank();
     config.freeMemory = freeMemory;
     // NitroFS gives read access to the sprite pack packed into PKTool.nds.
     // It may change the current device, so restore the SD card afterwards:
