@@ -85,7 +85,29 @@ int main() {
         ui::App app(cfg);
         REQUIRE(std::string(app.screenName())=="Home");
         press(app,ui::kKeyY);REQUIRE(std::string(app.screenName())=="Transporter");
-        for(int i=0;i<4;++i) press(app,ui::kKeyA); // source, mon, dest, empty slot
+        press(app,ui::kKeyA); // Crystal source -> Pokémon picklist
+        {
+            std::array<uint16_t,256*192> top{},bottom{};
+            gfx::Canvas tc(top.data()),bc(bottom.data());
+            app.draw(tc,bc);
+            // The source Pokémon selector must use the Unova RGB555
+            // selection cursor, not the old green-on-white GB screen.
+            REQUIRE(bottom[27*256+5]==gfx::rgb(228,63,76));
+            REQUIRE(top[40*256+5]==gfx::rgb(52,164,176));
+        }
+        press(app,ui::kKeyA); // Pokémon -> destination list
+        press(app,ui::kKeyA); // destination save -> GBA slot grid
+        {
+            std::array<uint16_t,256*192> top{},bottom{};
+            gfx::Canvas tc(top.data()),bc(bottom.data());
+            app.draw(tc,bc);
+            REQUIRE(bottom[13*256+8]==gfx::rgb(228,63,76));
+            press(app,ui::kKeyRight); // horizontal moves one slot
+            app.draw(tc,bc);
+            REQUIRE(bottom[13*256+48]==gfx::rgb(228,63,76));
+            press(app,ui::kKeyLeft); // return to first slot
+        }
+        press(app,ui::kKeyA); // accept first empty slot
         REQUIRE(same(a,sb)&&same(b,db));
         press(app,ui::kKeyStart); // arm confirmation
         REQUIRE(!io::fileExists(j)&&same(a,sb)&&same(b,db));
