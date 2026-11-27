@@ -34,7 +34,7 @@ foreach (string path in Directory.EnumerateFiles(args[0]).OrderBy(p => p))
 }
 Console.WriteLine($"PKHeX audit: valid={legal}, invalid={illegal}, conversion refused={refused}, errors={errors}");
 // VPT038 adds the exact opt-in repaired Gen II EXP-mismatch output to the
-// 36 historical language/destination fixtures. Every one must be PKHeX-valid.
-if (legal != 37 || illegal != 0 || refused != 0 || errors != 0) return 1;
+// 36 historical language/destination fixtures plus two destination-repair\n// cases (Poke Ball and incompatible move). All must be PKHeX-valid.
+if (legal != 39 || illegal != 0 || refused != 0 || errors != 0) return 1;
 // This gate applies only to this regression corpus, not all possible Pokemon.
 return 0;
