@@ -2981,7 +2981,10 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
 #endif
     top.hline(14, 152, 228, kBorder);
     top.text(kFontLarge, 0, 156, 256, Align::Center, "Gerenciador Pokemon", kText);
-    top.text(kFontSmall, 0, 173, 246, Align::Right, "v" + config_.version, kMuted);
+    // Make experimental builds identifiable without a duplicate "v" prefix.
+    const std::string versionLabel = config_.version.rfind("VPT", 0) == 0
+                                         ? config_.version : "v" + config_.version;
+    top.text(kFontSmall, 0, 173, 246, Align::Right, versionLabel, kMuted);
 
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
     bottom.fillRect(0, 0, 256, 25, kTitleBar);
