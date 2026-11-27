@@ -273,14 +273,19 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
     // The first finding previously displayed in Review could be a VALID
     // informational line ("Hatched from an egg"), hiding the real blocker.
     // Put actual errors first, followed by warnings and valid observations.
+    std::vector<std::string> destinationDiagnostics;
     for(const auto severity:{legality::Severity::Invalid,
                              legality::Severity::Warning,legality::Severity::Valid})
         for(const auto& finding:targetReport.findings)
             if(finding.severity==severity)
-                result.notes.push_back(std::string(
+                destinationDiagnostics.push_back(std::string(
                     severity==legality::Severity::Invalid?"ERROR: ":
                     severity==legality::Severity::Warning?"WARN: ":"INFO: ")+finding.text);
     if (!acceptsFreshLegalOutput(target, targetReport)) {
+        // Surface the actual rejection before any earlier codec notes. This
+        // prevents "Hatched from an egg" (a Valid fact) masking the blocker.
+        result.notes.insert(result.notes.begin(),
+                            destinationDiagnostics.begin(),destinationDiagnostics.end());
         const auto candidate=proposeDestinationRepair(original,target,bytes,tradeOt,
                                                       entity+otOffset,entity+nickOffset);
         result.repairAvailable=candidate.available;
@@ -295,6 +300,9 @@ Preview previewGbToGba(const uint8_t* entity, std::size_t size, uint8_t generati
             result.notes.push_back("REPAIR: "+change);
         result.notes.push_back("Destination repair is optional and does not change source save");
     }
+    if(!result.repaired)
+        result.notes.insert(result.notes.end(),
+                            destinationDiagnostics.begin(),destinationDiagnostics.end());
     if (targetReport.overall() == legality::Severity::Warning) {
         result.notes.push_back("Expected PCCS SID=0 warning retained; Gen III has a SID, Gen II does not.");
     }
