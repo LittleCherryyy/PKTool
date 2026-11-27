@@ -190,6 +190,11 @@ private:
     void drawTransporter(gfx::Canvas& top, gfx::Canvas& bottom);
     void transporterSelectSave(bool source);
     void startTransportScan(bool source);
+    // Startup catalog and bounded image preload operate in idle Home frames.
+    // No full saves are retained beyond the small, read-only staging cache.
+    void tickStartupPreload();
+    bool readStartupImage(const std::string& path,std::vector<uint8_t>& image);
+    void clearStartupImages();
     void syncTransportCatalog();
     void refreshSessionSave(const std::string& path);
     void tickTransportScan();
@@ -197,6 +202,14 @@ private:
     void tickTransportBoxes();
     void cancelTransportBusy();
     std::unique_ptr<saves::IncrementalSaveScan> transportScan_;
+    struct PreloadedImage {
+        std::string path;
+        long fileSize=0,modified=0;
+        std::vector<uint8_t> bytes;
+    };
+    std::vector<PreloadedImage> preloadedImages_;
+    size_t preloadedBytes_=0,preloadIndex_=0;
+    bool startupCatalogScan_=false;
     bool transportScanSource_=true,transportLoadSource_=true;
     int transportLoadBox_=-1;
     std::string transportLoadPath_;
