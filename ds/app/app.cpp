@@ -1124,18 +1124,28 @@ bool App::updateHome(const Input& in) {
         homeCursor_ = zone - kZoneItem;
         activate = true;
     }
-    if(kTiles==5) {
-        if(homeCursor_==4) {
-            if(in.repeated&kKeyLeft) homeCursor_=0;
-            else if(in.repeated&kKeyRight) homeCursor_=1;
-            else if(in.repeated&kKeyUp) homeCursor_=0;
-            else if(in.repeated&kKeyDown) homeCursor_=2;
-        } else if((in.repeated&kKeyRight) && !(homeCursor_&1)) homeCursor_=4;
-        else if((in.repeated&kKeyLeft) && (homeCursor_&1)) homeCursor_=4;
-        else if(in.repeated&(kKeyUp|kKeyDown)) homeCursor_^=2;
+    // Two-column grid with a full-width Transporter tile in the third row.
+    // Keep the original five actions and touch-zone IDs unchanged.
+    if (kTiles == 5) {
+        if (in.repeated & (kKeyLeft | kKeyRight)) {
+            if (homeCursor_ == 4)
+                homeCursor_ = (in.repeated & kKeyRight) ? 3 : 2;
+            else
+                homeCursor_ ^= 1;
+        }
+        if (in.repeated & kKeyUp) {
+            if (homeCursor_ == 4) homeCursor_ = 2;
+            else if (homeCursor_ >= 2) homeCursor_ -= 2;
+            else homeCursor_ = 4;
+        }
+        if (in.repeated & kKeyDown) {
+            if (homeCursor_ == 4) homeCursor_ = 0;
+            else if (homeCursor_ < 2) homeCursor_ += 2;
+            else homeCursor_ = 4;
+        }
     } else {
-        if(in.repeated&(kKeyLeft|kKeyRight)) homeCursor_=(homeCursor_&2)|((homeCursor_+1)&1);
-        if(in.repeated&(kKeyUp|kKeyDown)) homeCursor_^=2;
+        if (in.repeated & (kKeyLeft | kKeyRight)) homeCursor_ = (homeCursor_ & 2) | ((homeCursor_ + 1) & 1);
+        if (in.repeated & (kKeyUp | kKeyDown)) homeCursor_ ^= 2;
     }
     if (in.pressed & kKeyStart) return false;
     if (!activate) {
@@ -2523,24 +2533,29 @@ void App::draw(Canvas& top, Canvas& bottom) {
 
 void App::drawChrome(Canvas& c, const std::string& status, const std::string& badge, Color badgeColor,
                      Color statusColor) {
+    // One flat RGB555 header reused across screens: no texture decoding or
+    // extra sprite residency in the tight ARM9/DSi renderer.
     c.grid(0, kBodyTop, gfx::kScreenWidth, gfx::kScreenHeight - kBodyTop, kBackground, kGridLine, 12);
     c.fillRect(0, 0, gfx::kScreenWidth, kTitleHeight, kTitleBar);
-    c.text(kFontLarge, 0, 0, gfx::kScreenWidth, Align::Center, "PKTool", kText);
-    c.hline(10, kTitleHeight - 2, gfx::kScreenWidth - 20, kAccent);
+    c.fillRect(0, 0, 26, kTitleHeight - 1, kCursor);
+    c.fillRect(26, 0, 3, kTitleHeight - 1, kText);
+    c.text(kFontLarge, 35, 1, 90, Align::Left, "PKTool", kText);
+    c.hline(130, 12, 120, kRed);
+    c.hline(0, kTitleHeight - 1, gfx::kScreenWidth, kRed);
     c.fillRect(0, kStatusTop, gfx::kScreenWidth, kStatusHeight, kStatusBar);
     c.hline(0, kBodyTop - 1, gfx::kScreenWidth, kBorder);
 
-    int badgeWidth = badge.empty() ? 0 : Canvas::textWidth(kFontSmall, badge) + 12;
-    c.text(kFontSmall, 6, kStatusTop + 1, gfx::kScreenWidth - 16 - badgeWidth, Align::Left, status,
+    const int badgeWidth = badge.empty() ? 0 : Canvas::textWidth(kFontSmall, badge) + 12;
+    c.text(kFontSmall, 7, kStatusTop + 1, gfx::kScreenWidth - 17 - badgeWidth, Align::Left, status,
            statusColor == 0 ? kText : statusColor);
     if (!badge.empty()) {
-        int x = gfx::kScreenWidth - badgeWidth - 4;
+        const int x = gfx::kScreenWidth - badgeWidth - 4;
         c.fillCircle(x + 3, kStatusTop + 7, 2, badgeColor);
         c.text(kFontSmall, x + 8, kStatusTop + 1, badge, kMuted);
     } else {
-        // Battery-style status pill, as in the reference design.
-        c.roundRect(gfx::kScreenWidth - 22, kStatusTop + 4, 16, 8, kBorderLight, 0);
-        c.fillRect(gfx::kScreenWidth - 20, kStatusTop + 6, 12, 4, kGreen);
+        // Decorative Pokédex marks, NOT a fabricated battery indicator.
+        c.fillRect(235, 24, 5, 2, kAccent);
+        c.fillRect(243, 24, 5, 2, kAccent);
     }
 }
 
@@ -2548,6 +2563,7 @@ void App::drawHints(Canvas& c, const std::vector<std::pair<std::string, std::str
                     const std::vector<int>& ids) {
     c.fillRect(0, kHintTop, gfx::kScreenWidth, gfx::kScreenHeight - kHintTop, kTitleBar);
     c.hline(0, kHintTop, gfx::kScreenWidth, kBorder);
+    c.fillRect(0, kHintTop + 1, 5, gfx::kScreenHeight - kHintTop - 1, kCursor);
     std::vector<int> widths;
     int total = 0;
     for (const auto& hint : hints) {
@@ -2739,7 +2755,7 @@ void App::drawList(Canvas& c, const std::vector<std::string>& rows, int cursor, 
         const int ry = y + i * rowHeight;
         if (scroll + i != cursor && (scroll + i) % 2 == 0) c.fillRect(x + 1, ry, w - 2, rowHeight - 1, kPanelDark);
     }
-    if (selectedVisible) c.roundRect(x, barY, w, rowHeight - 1, kAccent, rgb(28, 58, 110));
+    if (selectedVisible) drawUnovaTile(c, x, barY, w, rowHeight - 1, true);
     for (int i = 0; i < shown; ++i) {  // texts and touch zones
         const int index = scroll + i;
         const int ry = y + i * rowHeight;
@@ -2938,92 +2954,116 @@ void App::drawSummary(Canvas& c, const pokemon::Pokemon* p, bool badData, bool b
 // Drawing: screens
 
 void App::drawHome(Canvas& top, Canvas& bottom) {
-    drawChrome(top, "PKTool  \xE2\x80\xA2  " + std::string(config_.storageReady ? "SD card ready" : "No SD card"), "", 0);
-    // Logo.
-    drawBallEmblem(top, 128, 78, 26, kRed, kText);
-    top.text(kFontLarge, 0, 110, gfx::kScreenWidth, Align::Center, "PKTool", kText);
-    top.text(kFontSmall, 0, 130, gfx::kScreenWidth, Align::Center, "Pok\xC3\xA9mon save editor for Nintendo DS", kMuted);
-    top.text(kFontSmall, 0, 144, gfx::kScreenWidth, Align::Center, "Gen I \xC2\xB7 II \xC2\xB7 III \xC2\xB7 IV \xC2\xB7 V", kDim);
-    top.text(kFontSmall, 0, 174, gfx::kScreenWidth - 6, Align::Right, "v" + config_.version, kDim);
+    // DSi-friendly visual theme: 256x192 native framebuffer, a few small
+    // Canvas primitives, no new NitroFS assets, no GPU shaders or translucency.
+    drawChrome(top, "POKEDEX  /  UNOVA", "", 0);
+    top.roundRect(9, 43, 103, 99, kBorder, kPanelDark);
+    top.circle(60, 91, 36, kDim);
+    top.circle(60, 91, 32, kAccent);
+    top.hline(22, 91, 10, kRed);
+    top.hline(88, 91, 10, kRed);
+    top.vline(60, 52, 8, kAccent);
+    top.vline(60, 123, 8, kAccent);
+    drawBallEmblem(top, 60, 91, 17, kRed, kText);
+
+    top.text(kFontSmall, 120, 44, 125, Align::Left, "STATUS DO SISTEMA", kAccent);
+    for (int i = 0; i < 3; ++i)
+        top.roundRect(120, 61 + i * 27, 125, 23, kBorder, kPanel);
+    top.text(kFontSmall, 126, 66, 114, Align::Left,
+             config_.storageReady ? "SD: PRONTO" : "SD: AUSENTE",
+             config_.storageReady ? kGreen : kRed);
+    top.text(kFontSmall, 126, 93, 114, Align::Left, "GERACOES I - V", kText);
+#ifdef VPT_TRANSPORTER_PREVIEW
+    top.text(kFontSmall, 126, 120, 114, Align::Left,
+             config_.transporterPreview ? "TRANSPORTER: ON" : "TRANSPORTER: OFF", kAccent);
+#else
+    top.text(kFontSmall, 126, 120, 114, Align::Left, "EDITOR DE SAVES", kText);
+#endif
+    top.hline(14, 152, 228, kBorder);
+    top.text(kFontLarge, 0, 156, 256, Align::Center, "Gerenciador Pokemon", kText);
+    top.text(kFontSmall, 0, 173, 246, Align::Right, "v" + config_.version, kMuted);
 
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
-    struct Tile {
-        const char* label;
-        const char* caption;
-    };
-    const Tile tiles[] = {
-        {"Open save", "Browse your saves"},
-        {"Backups", "Restore a save"},
-        {"Bank", "Pok\xC3\xA9mon on the SD"},
-        {"Settings", "Options and About"},
-    };
-    bool withTransporter=false;
+    bottom.fillRect(0, 0, 256, 25, kTitleBar);
+    bottom.fillRect(0, 0, 18, 24, kCursor);
+    bottom.hline(6, 24, 244, kBorder);
+    bottom.text(kFontLarge, 25, 5, 219, Align::Left, "MENU PRINCIPAL", kText);
+
+    bool withTransporter = false;
 #ifdef VPT_TRANSPORTER_PREVIEW
-    withTransporter=config_.transporterPreview;
+    withTransporter = config_.transporterPreview;
 #endif
-    for (int i = 0; i < 4; ++i) {
-        int x = withTransporter ? 4 + (i%2)*160 : 8 + (i % 2) * 124;
-        int y = 8 + (i / 2) * 82;
-        int w = withTransporter ? 88 : 116;
-        int h = 76;
-        bool selected = i == homeCursor_;
-        bool disabled = false;
-        bottom.roundRect(x, y, w, h, selected ? kAccent : kBorder, kPanel, selected ? 2 : 1);
-        int cx = x + w / 2;
-        int cy = y + 28;
-        Color ink = disabled ? kDim : kText;
+    struct Tile { const char* label; const char* description; };
+    const Tile tiles[] = {
+        {"Abrir save", "Jogos I - V"},
+        {"Backups", "Restaurar"},
+        {"Banco", "Caixas na SD"},
+        {"Opcoes", "Configurar"},
+        {"Poke Transporter", "GB/GBC  >  GBA"},
+    };
+    for (int i = 0; i < (withTransporter ? 5 : 4); ++i) {
+        const bool featured = i == 4;
+        const int x = featured ? 8 : 8 + (i % 2) * 124;
+        const int y = featured ? 136 : withTransporter ? 29 + (i / 2) * 52 : 37 + (i / 2) * 63;
+        const int w = featured ? 240 : 116;
+        const int h = featured ? 35 : withTransporter ? 46 : 55;
+        const bool selected = i == homeCursor_;
+        drawUnovaTile(bottom, x, y, w, h, selected);
+        const Color ink = selected ? kText : kAccent;
+        const int ix = x + 16, iy = y + (h - 18) / 2;
         switch (i) {
-            case 0:  // cartridge
-                bottom.roundRect(cx - 14, cy - 16, 28, 30, ink, rgb(40, 60, 120));
-                bottom.fillRect(cx - 9, cy - 11, 18, 14, rgb(120, 110, 220));
-                drawBallEmblem(bottom, cx, cy - 4, 5, kRed, kText);
+            case 0: // save cartridge
+                bottom.roundRect(ix - 9, iy - 1, 19, 19, ink, kPanelDark);
+                bottom.fillRect(ix - 6, iy + 3, 13, 4, ink);
+                bottom.hline(ix - 5, iy + 12, 11, ink);
                 break;
-            case 1:  // clock
-                bottom.circle(cx, cy - 2, 14, ink);
-                bottom.circle(cx, cy - 2, 13, ink);
-                bottom.vline(cx, cy - 11, 9, ink);
-                bottom.hline(cx, cy - 2, 7, ink);
+            case 1: // backup/recovery clock
+                bottom.circle(ix, iy + 8, 9, ink);
+                bottom.vline(ix, iy + 2, 7, ink);
+                bottom.hline(ix, iy + 8, 6, ink);
                 break;
-            case 2:  // storage box
-                bottom.rect(cx - 13, cy - 14, 26, 26, ink, 2);
-                bottom.rect(cx - 6, cy - 7, 12, 12, ink, 2);
+            case 2: // Bank box
+                bottom.rect(ix - 9, iy, 19, 17, ink, 2);
+                bottom.hline(ix - 7, iy + 6, 15, ink);
+                bottom.fillCircle(ix, iy + 10, 2, ink);
                 break;
-            default:  // settings: three sliders
+            case 3: // settings sliders
                 for (int row = 0; row < 3; ++row) {
-                    int ly = cy - 12 + row * 10;
-                    bottom.hline(cx - 14, ly, 28, ink);
-                    bottom.fillRect(cx - 9 + ((row * 9) % 17), ly - 2, 4, 5, kAccent);
+                    const int ry = iy + 2 + row * 6;
+                    bottom.hline(ix - 9, ry, 19, ink);
+                    bottom.fillRect(ix - 5 + row * 5, ry - 2, 4, 5, ink);
                 }
                 break;
+            default: // GB to GBA: link arrows and storage
+                bottom.roundRect(ix - 9, iy, 19, 17, ink, kPanelDark);
+                bottom.hline(ix - 5, iy + 7, 11, ink);
+                bottom.arrow(ix - 4, iy - 4, 5, 1, kRed);
+                bottom.arrow(ix + 2, iy - 4, 5, 1, kRed);
+                break;
         }
-        bottom.text(kFontLarge, x, y + 46, w, Align::Center, tiles[i].label, ink);
-        bottom.text(kFontSmall, x, y + 61, w, Align::Center,
-                    withTransporter ? (i==0?"Saves":i==1?"Restore":i==2?"Storage":"Options") : tiles[i].caption,
-                    disabled ? kDim : kMuted);
+        const int textX = featured ? x + 50 : x + 30;
+        bottom.text(kFontLarge, textX, y + (featured ? 3 : 8), w - (featured ? 55 : 34), Align::Left,
+                    tiles[i].label, kText);
+        bottom.text(kFontSmall, textX, y + (featured ? 18 : 25), w - (featured ? 55 : 34), Align::Left,
+                    tiles[i].description, selected ? kText : kMuted);
         zones_.push_back({x, y, w, h, kZoneItem + i});
     }
 #ifdef VPT_TRANSPORTER_PREVIEW
-    if (config_.transporterPreview) {
-        const bool selected=homeCursor_==4;
-        bottom.roundRect(94,57,68,62,selected?kAccent:kBorder,kPanel,selected?2:1);
-        drawBallEmblem(bottom,128,77,11,kRed,kText);
-        bottom.hline(108,91,40,kAccent);
-        bottom.arrow(145,88,7,1,kAccent);
-        bottom.text(kFontSmall,94,101,68,Align::Center,"Transporter",kText);
-        zones_.push_back({94,57,68,62,kZoneItem+4});
-        top.text(kFontSmall,0,159,256,Align::Center,"Poke Transporter | GB to GBA",kAccent);
-        drawHints(bottom, {{"A", "Open"}, {"Y", "Transporter"}, {"START", "Exit"}}, {kKeyA, kKeyY, kKeyStart});
+    if (withTransporter) {
+        drawHints(bottom, {{"A", "Abrir"}, {"Y", "Transporter"}, {"START", "Sair"}},
+                  {kKeyA, kKeyY, kKeyStart});
         return;
     }
 #endif
-    drawHints(bottom, {{"A", "Open"}, {"+", "Move"}, {"START", "Exit"}}, {kKeyA, 0, kKeyStart});
+    drawHints(bottom, {{"A", "Abrir"}, {"+", "Mover"}, {"START", "Sair"}},
+              {kKeyA, 0, kKeyStart});
 }
 
 void App::drawBrowser(Canvas& top, Canvas& bottom) {
 #ifdef VPT_TRANSPORTER_PREVIEW
     if(transportScan_) {drawTransporter(top,bottom);return;}
 #endif
-    drawChrome(top, "Pok\xC3\xA9mon saves on the SD card", std::to_string(saveFiles_.size()) + " found", kAccent);
+    drawChrome(top, "GERENCIADOR DE SAVES", std::to_string(saveFiles_.size()) + " saves", kAccent);
     top.roundRect(4, kBodyTop + 3, 248, 150, kBorder, kPanel);
     if (saveFiles_.empty()) {
         top.text(kFontLarge, 4, 70, 248, Align::Center, "No Pok\xC3\xA9mon saves found", kText);
@@ -3073,7 +3113,7 @@ void App::drawBrowser(Canvas& top, Canvas& bottom) {
 
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
     bottom.roundRect(4, 4, 248, 168, kBorder, kPanel);
-    bottom.text(kFontSmall, 10, 5, "SELECT SAVE", kMuted);
+    bottom.text(kFontSmall, 10, 5, "SELECIONE UM SAVE", kAccent);
     if (saveFiles_.empty()) {
         bottom.text(kFontSmall, 4, 80, 248, Align::Center, "Nothing here yet", kDim);
     }
@@ -3090,7 +3130,7 @@ void App::drawBrowser(Canvas& top, Canvas& bottom) {
         int y = 19 + i * (rowH + 1);
         bool selected = index == browserCursor_;
         if (selected) {
-            bottom.roundRect(8, y, 236, rowH, kAccent, rgb(28, 58, 110));
+            drawUnovaTile(bottom, 8, y, 236, rowH, true);
         } else {
             bottom.fillRect(9, y, 234, rowH, kPanelDark);
         }
@@ -3239,7 +3279,7 @@ void App::drawSaveMenu(Canvas& top, Canvas& bottom) {
         int y = y0 + i * (rowH + rowGap);
         bool selected = i == saveMenuCursor_;
         if (selected) {
-            bottom.roundRect(8, y, 240, rowH, kAccent, kSelectedRow, 2);
+            drawUnovaTile(bottom, 8, y, 240, rowH, true);
         } else {
             bottom.fillRect(9, y, 238, rowH, kPanelDark);
         }
