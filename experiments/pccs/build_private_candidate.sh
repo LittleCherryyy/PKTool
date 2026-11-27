@@ -25,7 +25,8 @@ branch="$(git symbolic-ref --quiet --short HEAD || true)"
 if [ "$branch" != "dev/vpt035-private-test-build" ] && [ "$branch" != "dev/vpt036-unova-ui" ] &&
    [ "$branch" != "dev/vpt037-no-startup-probe" ] &&
    [ "$branch" != "dev/vpt037-items-2-5" ] &&
-   [ "$branch" != "dev/vpt038-repair-for-transfer" ]; then
+   [ "$branch" != "dev/vpt038-repair-for-transfer" ] &&
+   [ "$branch" != "dev/vpt038-destination-repair" ]; then
     echo "Checkout a private VPT035/VPT036/VPT037 test branch first (current: $branch)." >&2
     exit 2
 fi
@@ -41,6 +42,12 @@ PY
 # Keep filename and checked-out source branch consistent. A filename is
 # not a version selector: the private build always archives the CURRENT HEAD.
 case "$(basename "$output" | tr '[:upper:]' '[:lower:]')" in
+  *destination*|*destrepair*|*vpt0381*)
+    if [ "$branch" != "dev/vpt038-destination-repair" ]; then
+        echo "ERROR: destination repair filename requires dev/vpt038-destination-repair." >&2
+        exit 2
+    fi
+    ;;
   *vpt037*|*v037*)
     if [ "$branch" != "dev/vpt037-items-2-5" ]; then
         echo "ERROR: VPT037 filename requested, but current branch is $branch." >&2
@@ -49,7 +56,8 @@ case "$(basename "$output" | tr '[:upper:]' '[:lower:]')" in
     fi
     ;;
   *vpt038*|*v038*)
-    if [ "$branch" != "dev/vpt038-repair-for-transfer" ]; then
+    if [ "$branch" != "dev/vpt038-repair-for-transfer" ] &&
+       [ "$branch" != "dev/vpt038-destination-repair" ]; then
         echo "ERROR: VPT038 filename requested, but current branch is $branch." >&2
         exit 2
     fi
@@ -78,6 +86,20 @@ git archive --format=tar "$commit" | tar -xf - -C "$work"
     # A different filename alone does not establish the themed build.
     # Refuse to produce a misleading VPT036 binary if this compiled ELF
     # does not contain the new UI and its explicit on-screen version ID.
+    if [ "$branch" = "dev/vpt038-destination-repair" ]; then
+        for required in 'VPT038-DestRepair' 'Destination repair is optional' 'Pokemon Save Manager' 'MAIN MENU'; do
+            if ! grep -aFq "$required" "$work/PKTool.elf"; then
+                echo "ERROR: VPT038 destination repair marker missing: $required" >&2
+                exit 1
+            fi
+        done
+        if grep -aFq 'VPT036-Unova' "$work/PKTool.elf" ||
+           grep -aFq 'VPT006 ARM9 read-only probe' "$work/PKTool.elf"; then
+            echo "ERROR: obsolete diagnostic or VPT036 marker in destination repair build" >&2
+            exit 1
+        fi
+        echo "PASS: VPT038 destination repair diagnostics present, silent boot"
+    fi
     if [ "$branch" = "dev/vpt038-repair-for-transfer" ]; then
         for required in 'VPT038-Repair' 'Repair for Transfer' 'Pokemon Save Manager' 'MAIN MENU'; do
             if ! grep -aFq "$required" "$work/PKTool.elf"; then
