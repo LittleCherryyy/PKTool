@@ -672,7 +672,11 @@ App::App(Config config)
     setSaved_ = settings_;
     data::setOrder(settings_.sortById ? data::Order::ById : data::Order::Alphabetical);
 #ifdef VPT_TRANSPORTER_PREVIEW
-    if(config_.transporterPreview && config_.storageReady) refreshTransferGate();
+    if(config_.transporterPreview && config_.storageReady && refreshTransferGate()) {
+        // Schedule discovery ONLY; the first Home frame renders immediately.
+        // FAT reads are performed cooperatively after the home screen appears.
+        startTransportScan(true);
+    }
 #endif
 }
 
@@ -785,6 +789,15 @@ bool App::updateFrame(const Input& rawInput) {
         redraw_ = true;
         return true;
     }
+#ifdef VPT_TRANSPORTER_PREVIEW
+    // Keep the Pokédex Home responsive while indexing. Never block boot on
+    // a complete SD search; each idle-frame task has a strictly bounded size.
+    if(config_.transporterPreview && screen_==Screen::Home &&
+       config_.storageReady && dialog_==Dialog::None) {
+        if(transportScan_) tickTransportScan();
+        else if(scanned_) tickStartupPreload();
+    }
+#endif
 
     Input in = rawInput;
     if (in.touched) {
@@ -894,13 +907,18 @@ void App::runPending() {
     pending_ = Pending::None;
     // Writing needs a 512 KB save in memory plus a validation copy: drop the
     // sprite cache first so the DS heap cannot run out halfway through.
-    if (action == Pending::Write || action == Pending::Restore) sprites_.clear();
+    if (action == Pending::Write || action == Pending::Restore) {
+        sprites_.clear();
+#ifdef VPT_TRANSPORTER_PREVIEW
+        clearStartupImages(); // never serve stale bytes after an editor write
+#endif
+    }
     switch (action) {
         case Pending::Scan:
 #ifdef VPT_TRANSPORTER_PREVIEW
             if(config_.transporterPreview) {
                 screen_=Screen::Browser;
-                startTransportScan(true);
+                startTransportScan(true); // reuses the startup discovery
                 break;
             }
 #endif
@@ -1029,7 +1047,11 @@ bool App::openSave(const std::string& path) {
     moving_ = false;
     sprites_.clear();
     std::vector<uint8_t> bytes;
-    if (!io::readFile(path, bytes)) {
+    bool cached=false;
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(config_.transporterPreview) cached=readStartupImage(path,bytes);
+#endif
+    if (!cached && !io::readFile(path, bytes)) {
         if (hadSave) screen_ = Screen::Browser;
         showMessage("Cannot open", "Could not read the file.");
         return false;
@@ -1184,7 +1206,15 @@ void App::startBrowser() {
         return;
     }
     if (!scanned_) {
-        pending_ = Pending::Scan;  // runs next frame, after "Scanning..." is shown
+#ifdef VPT_TRANSPORTER_PREVIEW
+        if(config_.transporterPreview && transportScan_) {
+            // Continue the shared startup scan, rather than restarting it
+            // from the root whenever the player opens the menu early.
+            screen_ = Screen::Browser;
+            return;
+        }
+#endif
+        pending_ = Pending::Scan;
         return;
     }
     screen_ = Screen::Browser;
@@ -2984,6 +3014,16 @@ void App::drawHome(Canvas& top, Canvas& bottom) {
     top.hline(14, 152, 228, kBorder);
     top.text(kFontLarge, 0, 156, 256, Align::Center, "Pokemon Save Manager", kText);
     // Build number belongs to Settings > About, not the home screen.
+#ifdef VPT_TRANSPORTER_PREVIEW
+    if(config_.transporterPreview && config_.storageReady) {
+        const std::string catalogStatus=transportScan_?
+            "INDEXING SD / SAVES":!scanned_?"PREPARING SAVES":
+            preloadIndex_<saveFiles_.size()?
+                "PRELOADING "+std::to_string(preloadIndex_)+"/"+std::to_string(saveFiles_.size()):
+                std::to_string(saveFiles_.size())+" SAVES INDEXED";
+        top.text(kFontSmall,0,179,256,Align::Center,catalogStatus,kMuted);
+    }
+#endif
 
     bottom.grid(0, 0, gfx::kScreenWidth, kHintTop, kBackground, kGridLine, 12);
     bottom.fillRect(0, 0, 256, 25, kTitleBar);
