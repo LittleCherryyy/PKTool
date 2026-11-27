@@ -6,10 +6,13 @@ Stdlib-only PNG conversion for non-interlaced images at <= 8-bit samples.
 Exact per-edition packs are optional: absent entries use the renderer fallback.
 """
 import concurrent.futures
+import os
 import pathlib
 import struct
+import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 import zlib
 
@@ -92,17 +95,65 @@ def convert(png):
     cropped=[pixels[y*w+x] for y in range(y0,y1) for x in range(x0,x1)]
     return b"PKS1"+struct.pack("<HH",x1-x0,y1-y0)+struct.pack("<"+"H"*len(cropped),*cropped)
 
+def download(url):
+    # MSYS2 users can select the system curl (known to work on some Windows
+    # configurations where Python's own HTTPS client repeatedly times out).
+    if os.environ.get("VPT_SPRITES_FETCHER", "urllib").lower() == "curl":
+        result = subprocess.run(
+            ["curl", "-sSL", "--connect-timeout", "8", "--max-time", "20",
+             "-w", "%{http_code}", url],
+            capture_output=True, timeout=25, check=False)
+        status = int(result.stdout[-3:]) if (len(result.stdout) >= 3
+                                            and result.stdout[-3:].isdigit()) else 0
+        if status in (404, 410):
+            raise urllib.error.HTTPError(url, status, "sprite not found", None, None)
+        if result.returncode or status != 200:
+            raise OSError("curl failed (return=" + str(result.returncode) +
+                          ", HTTP=" + str(status) + "): " +
+                          result.stderr.decode("utf-8", "replace")[-160:])
+        return result.stdout[:-3]
+    with urllib.request.urlopen(url, timeout=20) as response:
+        return response.read(200000)
+
+
 def get(job):
-    kind, folder, species=job
-    url=BASE+folder+"/"+str(species)+".png"
-    last=None
+    kind, folder, species = job
+    url = BASE + folder + "/" + str(species) + ".png"
+    # Persist converted blobs *outside* the disposable git-archive checkout.
+    # Repeated builds won't redownload thousands of sprites after a failure.
+    cache = pathlib.Path(os.environ.get(
+        "VPT_SPRITES_CACHE",
+        str(pathlib.Path.home() / ".cache" / "pktool-vpt-art" / PIN)))
+    entry = cache / kind / (str(species) + ".pks1")
+    missing = cache / kind / (str(species) + ".missing")
+    if missing.exists():
+        return kind, species, None, "404 (pinned source)"
+    if entry.is_file():
+        try:
+            blob = entry.read_bytes()
+            if blob[:4] == b"PKS1" and len(blob) >= 10:
+                return kind, species, blob, None
+        except OSError:
+            pass
+    last = None
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(url,timeout=20) as response: png=response.read(200000)
-            return kind,species,convert(png),None
+            blob = convert(download(url))
+            entry.parent.mkdir(parents=True, exist_ok=True)
+            entry.write_bytes(blob)
+            return kind, species, blob, None
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 410):
+                # Missing Pokémon art at an immutable commit is not transient.
+                missing.parent.mkdir(parents=True, exist_ok=True)
+                missing.touch()
+                return kind, species, None, "HTTP " + str(e.code)
+            last = e
         except Exception as e:
-            last=e;time.sleep(attempt+1)
-    return kind,species,None,str(last)
+            last = e
+        if attempt < 2:
+            time.sleep(attempt + 1)
+    return kind, species, None, str(last)
 
 def main():
     if len(sys.argv)==2 and sys.argv[1]=="--list":
@@ -114,10 +165,25 @@ def main():
     out=pathlib.Path(sys.argv[1]);out.mkdir(parents=True,exist_ok=True)
     jobs=[(kind,folder,i) for kind,(folder,count) in KINDS.items() for i in range(1,count+1)]
     packs={k:{} for k in KINDS}; failures=[]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
-        for kind,i,blob,error in pool.map(get,jobs):
-            if error: failures.append((kind,i,error))
-            else: packs[kind][i]=blob
+    workers = max(1, min(20, int(os.environ.get("VPT_SPRITES_WORKERS", "12"))))
+    successes = 0
+    started = time.monotonic()
+    print(f"Historic art: {len(jobs)} sprites, {workers} workers; "
+          f"fetcher={os.environ.get('VPT_SPRITES_FETCHER','urllib')}; "
+          f"cache persists in ~/.cache/pktool-vpt-art", flush=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(get, job) for job in jobs]
+        for done, future in enumerate(concurrent.futures.as_completed(futures), 1):
+            kind, i, blob, error = future.result()
+            if error:
+                failures.append((kind, i, error))
+            else:
+                packs[kind][i] = blob
+                successes += 1
+            if done == 1 or done % 100 == 0 or done == len(jobs):
+                print(f"Historic art progress: {done}/{len(jobs)} "
+                      f"(ready={successes}, fallback={len(failures)}, "
+                      f"elapsed={int(time.monotonic()-started)}s)", flush=True)
     for kind,(_,count) in KINDS.items():
         offset=8+4*(count+2); offsets=[]; contents=bytearray()
         for i in range(count+1):
