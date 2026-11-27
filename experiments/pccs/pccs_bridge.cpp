@@ -13,7 +13,7 @@
 #include <algorithm>
 #include "core/legality/legality.h"
 #include "core/legality/legalize.h"
-#include "core/data/moves.h"
+#include "core/data/names.h"
 // External PCCS headers from pinned upstream; not bundled.
 #include <Gen2Pokemon.h>
 #include <Gen3Pokemon.h>
