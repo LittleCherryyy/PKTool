@@ -1018,12 +1018,12 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
         top.roundRect(5,36,246,135,kBorder,kPanel);
         drawTransportSprite(top,candidate.mon,10,45,74,78,candidate.mon.format,false,transportSourceVisual_);
         marqueeActive_|=drawMarquee(top,93,48,150,Align::Left,candidate.mon.nickname,kText,frame_-marqueeStart_);
-        top.text(kFontSmall,93,66,150,Align::Left,"Original blocked",kRed);
+        marqueeActive_|=drawMarquee(top,93,66,150,Align::Left,candidate.error,kRed,frame_-marqueeStart_);
         top.text(kFontSmall,93,82,150,Align::Left,"Candidate verified",kGreen);
         top.text(kFontSmall,93,100,150,Align::Left,"PCCS LEGAL checked",kAccent);
         top.hline(12,128,232,kBorder);
-        top.text(kFontSmall,11,135,234,Align::Left,"Source save stays unchanged.",kText);
-        top.text(kFontSmall,11,150,234,Align::Left,"Only the transferred copy is repaired.",kMuted);
+        top.text(kFontSmall,11,135,234,Align::Left,"No repair written to source save.",kText);
+        top.text(kFontSmall,11,150,234,Align::Left,"Transfer still removes the original.",kMuted);
         bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
         bottom.fillRect(0,0,256,22,kTitleBar);
         bottom.text(kFontSmall,7,4,244,Align::Left,
