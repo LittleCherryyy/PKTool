@@ -1003,55 +1003,91 @@ void App::drawTransporter(Canvas& top,Canvas& bottom) {
     }
     if(transportPhase_==TransportPhase::SourceMon&&!transportMons_.empty()) {
         const auto& p=transportMons_[transportCursor_];
+        const auto position=transportPositions_[transportCursor_];
         const uint8_t gen=transportBankSource_?p.format:transportGeneration_;
-        const Color bg=gen==1?rgb(181,202,133):rgb(220,235,208);
-        const Color ink=rgb(30,54,35);
-        top.clear(bg);bottom.clear(bg);
-        top.rect(5,5,246,182,ink,2);
-        top.text(kFontLarge,10,10,236,Align::Center,transportBankSource_?"BANK - CLASSIC":visual::label(transportSourceVisual_)+" - PC",ink);
-        drawTransportSprite(top,p,12,35,100,100,gen,false,transportSourceVisual_);
-        marqueeActive_ |= drawMarquee(top,115,39,130,Align::Left,p.nickname,ink,frame_-marqueeStart_);
-        top.text(kFontSmall,115,60,"Lv "+std::to_string(p.level),ink);
-        top.text(kFontSmall,115,80,slotLabel(transportPositions_[transportCursor_].first,transportPositions_[transportCursor_].second),ink);
-        top.text(kFontSmall,115,100,130,Align::Left,p.shiny?"SHINY":"",ink);
-        top.text(kFontSmall,10,143,236,Align::Center,"Source language: "+std::string(data::languageName(transportBankSource_?p.language:transportLanguage_)),ink);
-        top.text(kFontSmall,10,158,236,Align::Center,transportBankSource_?"Language stored per Pokemon":transportLanguage_==1?"Japanese layout":"LEFT / RIGHT: confirm language",ink);
-        top.text(kFontSmall,10,173,236,Align::Center,std::to_string(transportSelected_.size())+" / 30 selected",ink);
+        drawChrome(top,transportBankSource_?"BANK / SOURCE":visual::label(transportSourceVisual_)+" / PC",
+                   std::to_string(transportSelected_.size())+"/30",kAccent);
+        top.roundRect(5,36,246,136,kBorder,kPanel);
+        top.roundRect(11,43,93,90,kBorder,kPanelDark);
+        // Source sprites remain 100% edition-accurate; only their frame changes.
+        drawTransportSprite(top,p,14,46,87,83,gen,false,transportSourceVisual_);
+        marqueeActive_|=drawMarquee(top,113,46,130,Align::Left,p.nickname,kText,frame_-marqueeStart_);
+        top.text(kFontSmall,113,65,130,Align::Left,"Lv "+std::to_string(p.level),kAccent);
+        top.text(kFontSmall,113,82,130,Align::Left,slotLabel(position.first,position.second),kMuted);
+        if(p.shiny) top.text(kFontSmall,113,101,130,Align::Left,"SHINY",kYellow);
+        top.hline(11,137,234,kBorder);
+        const auto language=sourceLanguageLabel(transportBankSource_?p.language:transportLanguage_,
+                                                transportBankSource_?"":transportSource_);
+        marqueeActive_|=drawMarquee(top,11,141,234,Align::Left,"Source language: "+language,kText,frame_-marqueeStart_);
+        top.text(kFontSmall,11,155,234,Align::Left,
+                 transportBankSource_?"Stored per Pokemon":transportLanguage_==1?
+                     "Japanese save layout":"Left/Right: adjust if misidentified",kMuted);
+        bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
+        bottom.fillRect(0,0,256,21,kTitleBar);
+        bottom.hline(0,20,256,kBorder);
+        bottom.text(kFontSmall,8,4,239,Align::Left,
+                    "BOX "+twoDigits(position.first+1)+"   |   "+std::to_string(transportSelected_.size())+" / 30 SELECTED",kAccent);
+        constexpr int visible=6, rowHeight=25;
         if(transportCursor_<transportScroll_) transportScroll_=transportCursor_;
-        if(transportCursor_>=transportScroll_+7) transportScroll_=transportCursor_-6;
-        for(int i=0;i<7&&transportScroll_+i<static_cast<int>(transportRows_.size());++i) {
-            const int index=transportScroll_+i,y=4+24*i;
-            bottom.rect(4,y,248,23,ink,index==transportCursor_?2:1);
-            if(index==transportCursor_) bottom.arrow(8,y+8,7,1,ink);
-            marqueeActive_ |= index==transportCursor_?drawMarquee(bottom,21,y+4,225,Align::Left,transportRows_[index],ink,frame_-marqueeStart_):false;
-            if(index!=transportCursor_) bottom.text(kFontSmall,21,y+4,225,Align::Left,transportRows_[index],ink);
-            zones_.push_back({4,y,248,23,kZoneItem+index});
+        if(transportCursor_>=transportScroll_+visible) transportScroll_=transportCursor_-visible+1;
+        for(int i=0;i<visible && transportScroll_+i<static_cast<int>(transportRows_.size());++i) {
+            const int index=transportScroll_+i,y=23+rowHeight*i;
+            const bool active=index==transportCursor_;
+            const auto& pos=transportPositions_[index];
+            const bool marked=std::find(transportSelected_.begin(),transportSelected_.end(),pos)!=transportSelected_.end();
+            drawUnovaTile(bottom,5,y,246,rowHeight-2,active);
+            bottom.roundRect(11,y+5,12,12,marked?kGreen:kDim,kPanelDark);
+            if(marked) bottom.text(kFontSmall,11,y+4,12,Align::Center,"X",kGreen);
+            const auto& mon=transportMons_[index];
+            pokemon::Pokemon icon;icon.species=mon.species;
+            drawIcon(bottom,26,y+1,22,20,icon,false);
+            const std::string label=slotLabel(pos.first,pos.second)+" "+mon.nickname+" Lv"+std::to_string(mon.level);
+            const Color ink=active?kText:marked?kGreen:kMuted;
+            if(active) marqueeActive_|=drawMarquee(bottom,51,y+4,194,Align::Left,label,ink,frame_-marqueeStart_);
+            else bottom.text(kFontSmall,51,y+4,194,Align::Left,label,ink);
+            zones_.push_back({5,y,246,rowHeight-2,kZoneItem+index});
         }
         drawHints(bottom,{{"X","Mark"},{"Y","Box"},{"A","Next"},{"B","Back"}},{kKeyX,kKeyY,kKeyA,kKeyB});
         return;
     }
     if(transportPhase_==TransportPhase::DestinationSlot&&!transportPositions_.empty()) {
-        const auto pos=transportPositions_[transportCursor_];
-        const int box=pos.first;
-        top.clear(rgb(32,93,108));bottom.clear(rgb(66,129,103));
-        top.text(kFontLarge,4,16,248,Align::Center,std::string(transportBankDest_?"BANK - BOX ":"GBA PC - BOX ")+twoDigits(box+1),kText);
-        top.text(kFontSmall,4,40,248,Align::Center,slotLabel(box,pos.second)+" | "+std::to_string(transportSelected_.size())+" Pokemon",kText);
-        top.text(kFontSmall,4,56,248,Align::Center,visual::label(transportDestVisual_)+" | "+visual::consoleName(visual::console(transportDestVisual_.edition)),kText);
-        top.text(kFontSmall,4,72,248,Align::Center,std::to_string(transportPositions_.size())+" free in PC",kText);
-        top.text(kFontSmall,4,90,248,Align::Center,"Green starts fit the entire batch.",kText);
-        marqueeActive_ |= drawMarquee(top,8,123,240,Align::Center,transportMessage_,kText,frame_-marqueeStart_);
+        const auto position=transportPositions_[transportCursor_];
+        const int box=position.first;
+        const int count=static_cast<int>(transportRows_.size());
+        const int boxCount=transportBankDest_?bank::Bank::kBoxCount:transportSave_->boxCount();
+        drawChrome(top,transportBankDest_?"BANK / DESTINATION":"GBA / DESTINATION","SELECT SLOT",kAccent);
+        top.roundRect(5,36,246,136,kBorder,kPanel);
+        top.text(kFontLarge,10,44,236,Align::Left,
+                 std::string(transportBankDest_?"BANK":"PC")+" BOX "+twoDigits(box+1)+"/"+twoDigits(boxCount),kText);
+        top.hline(11,66,233,kBorder);
+        top.text(kFontSmall,10,73,236,Align::Left,visual::label(transportDestVisual_),kAccent);
+        top.text(kFontSmall,10,90,236,Align::Left,"Start slot: "+slotLabel(box,position.second),kText);
+        top.text(kFontSmall,10,105,236,Align::Left,"Batch: "+std::to_string(transportSelected_.size())+" Pokemon",kText);
+        top.text(kFontSmall,10,120,236,Align::Left,
+                 std::to_string(transportPositions_.size())+" free slots in destination",kMuted);
+        top.text(kFontSmall,10,140,236,Align::Left,"Cyan = available   Red = cursor",kMuted);
+        marqueeActive_|=drawMarquee(top,10,155,236,Align::Left,transportMessage_,kYellow,frame_-marqueeStart_);
+        bottom.grid(0,0,256,kHintTop,kBackground,kGridLine,12);
         for(int i=0;i<transportBoxSlots_;++i) {
-            const int x=8+(i%6)*40,y=12+(i/6)*31;
+            const int x=8+(i%6)*40,y=9+(i/6)*32;
             const auto sp=transportBoxSpecies_[box*transportBoxSlots_+i];
-            const auto it=std::find(transportPositions_.begin(),transportPositions_.end(),std::make_pair(box,i));
-            const bool fits=it!=transportPositions_.end()&&static_cast<size_t>(it-transportPositions_.begin())<transportRows_.size();
-            bottom.roundRect(x,y,38,29,i==pos.second?kYellow:fits?kGreen:kPanelDark,kPanel, i==pos.second?2:1);
-            if(sp&&sp!=0xffff) {pokemon::Pokemon mon;mon.species=sp;drawIcon(bottom,x,y,38,29,mon,false);}
-            else if(sp==0xffff) bottom.text(kFontSmall,x,y+6,38,Align::Center,"!",kRed);
-            else bottom.pixel(x+19,y+14,fits?kGreen:kMuted);
-            if(!sp&&fits) zones_.push_back({x,y,38,29,kZoneItem+static_cast<int>(it-transportPositions_.begin())});
+            const auto it=std::find(transportPositions_.begin(),transportPositions_.begin()+count,
+                                    std::make_pair(box,i));
+            const bool fits=it!=transportPositions_.begin()+count;
+            const bool selected=i==position.second;
+            bottom.roundRect(x,y,38,30,selected?kCursor:fits?kAccent:kDim,
+                             selected?kSelectedRow:kPanelDark,selected?2:1);
+            if(sp && sp!=0xffff) {
+                pokemon::Pokemon mon;mon.species=sp;
+                drawIcon(bottom,x+1,y+1,36,27,mon,false);
+            } else if(sp==0xffff) {
+                bottom.text(kFontSmall,x,y+6,38,Align::Center,"!",kRed);
+            } else {
+                bottom.fillCircle(x+19,y+14,3,fits?kGreen:kDim);
+            }
+            if(fits) zones_.push_back({x,y,38,30,kZoneItem+static_cast<int>(it-transportPositions_.begin())});
         }
-        drawHints(bottom,{{"A","Select"},{"L/R","Page"},{"B","Cancel"}},{kKeyA,0,kKeyB});
+        drawHints(bottom,{{"A","Place"},{"L/R","Box"},{"B","Back"}},{kKeyA,0,kKeyB});
         return;
     }
     if(transportPhase_==TransportPhase::Review&&!transportEntries_.empty()) {
