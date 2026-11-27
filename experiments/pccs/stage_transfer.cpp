@@ -7,6 +7,8 @@
 #include "core/pokemon/pk3.h"
 #include "core/saves/save_commit.h"
 #include "core/saves/save_file.h"
+#include "core/legality/legalize.h"
+#include "core/legality/legality.h"
 #include <array>
 #include <algorithm>
 namespace pktool::pokemon::pccs_bridge {
@@ -108,6 +110,53 @@ bool destinationMatches(const SaveFile& before,const SaveFile& after,const std::
     }
     return true;
 }
+// A proposed repair is an ephemeral conversion input, not a modification of
+// the original Game Boy save. Only a legalizer-produced candidate which passes
+// the FULL PCCS LEGAL conversion and unchanged-identity policy can be offered.
+// In particular, no automatic changes to species, OT, TID, nickname,
+// level, shiny state or gender can be silently accepted.
+bool identityPreserved(const Pokemon& before,const Pokemon& after) {
+    return before.format==after.format &&
+           before.species==after.species && before.level==after.level &&
+           before.nickname==after.nickname &&
+           before.trainer.name==after.trainer.name &&
+           before.trainer.tid==after.trainer.tid &&
+           before.trainer.gender==after.trainer.gender &&
+           before.shiny==after.shiny && before.gender==after.gender &&
+           before.form==after.form && before.language==after.language &&
+           before.originGame==after.originGame && before.isEgg==after.isEgg;
+}
+struct RepairAttempt {
+    bool available=false;
+    Blob bytes{};
+    std::vector<std::string> changes;
+};
+RepairAttempt proposeRepair(const Blob& original,size_t stored,uint8_t format) {
+    RepairAttempt r;
+    if((format!=1 && format!=2)||stored!=entity::storedSize(format)) return r;
+    const Pokemon before=entity::decode(format,original.data(),stored);
+    // A repair must never evade PCCS's hard transfer gates for eggs, mythical
+    // events, impossible species or invalid source levels.
+    if(before.isEgg||before.species==151||before.species==251||
+       before.species==0||before.level<1||before.level>100 ||
+       !supportedLanguage(before.language)) return r;
+    auto proposal=legality::legalizeGb(before,500);
+    if(proposal.changes.empty()||!proposal.unresolved.empty() ||
+       proposal.report.overall()!=legality::Severity::Valid ||
+       !identityPreserved(before,proposal.pokemon)) return r;
+    r.bytes=original;
+    entity::apply(proposal.pokemon,r.bytes.data());
+    if(std::equal(original.begin(),original.begin()+stored,r.bytes.begin())) return r;
+    const Pokemon decoded=entity::decode(format,r.bytes.data(),stored);
+    if(!identityPreserved(before,decoded) ||
+       legality::check(decoded).overall()!=legality::Severity::Valid) return r;
+    // Mandatory independent PCCS/Pk3 review, not only a Gen I/II legality
+    // badge. If it refuses, neither UI nor commit can opt into this repair.
+    if(!previewGbToGba(r.bytes.data(),stored,format).ok) return r;
+    r.available=true;
+    r.changes=std::move(proposal.changes);
+    return r;
+}
 }
 bool loadTransferBank(const std::vector<uint8_t>& bytes,bank::Bank& bank) {
     return bank.loadBytes(bytes)==bank::Bank::LoadResult::Ok && bank.serialize()==bytes;
@@ -116,6 +165,7 @@ struct BatchStage::State {
     const std::vector<uint8_t>& source;
     const std::vector<uint8_t>& destination;
     const std::vector<TransferPair> pairs;
+    const std::vector<size_t> repairIndices;
     uint8_t sourceLanguage;
     std::unique_ptr<SaveFile> s,d;
     std::unique_ptr<bank::Bank> bankDest,bankSource;
@@ -125,13 +175,19 @@ struct BatchStage::State {
     std::vector<bool> changedBag;
     size_t index=0;
     bool allReady=true,done=false,initialized=false;
-    State(const std::vector<uint8_t>& a,const std::vector<uint8_t>& b,const std::vector<TransferPair>& p,uint8_t lang)
-        :source(a),destination(b),pairs(p),sourceLanguage(lang){}
+    State(const std::vector<uint8_t>& a,const std::vector<uint8_t>& b,const std::vector<TransferPair>& p,uint8_t lang,
+          const std::vector<size_t>& repairs)
+        :source(a),destination(b),pairs(p),repairIndices(repairs),sourceLanguage(lang){}
     bool fail(const std::string& error) {result.error=error;done=true;return true;}
     bool step() {
         if(done) return true;
         if(!initialized) {
     if(pairs.empty()||pairs.size()>kMaxBatch) return fail("Select 1-30 Pokemon");
+    for(size_t i=0;i<repairIndices.size();++i) {
+        if(repairIndices[i]>=pairs.size()) return fail("Invalid repair entry");
+        for(size_t j=0;j<i;++j)
+            if(repairIndices[j]==repairIndices[i]) return fail("Duplicate repair entry");
+    }
     for(size_t i=0;i<pairs.size();++i) for(size_t j=0;j<i;++j)
         if(sameSlot(pairs[i].from,pairs[j].from)||sameSlot(pairs[i].to,pairs[j].to))
             return fail("Duplicate source or destination slot");
@@ -193,11 +249,32 @@ struct BatchStage::State {
                     selected[pk2::offset::kHeldItem]=0;
             }
             if(entry.error.empty()) {
+                const bool requested=std::find(repairIndices.begin(),repairIndices.end(),i)!=repairIndices.end();
                 auto preview=previewGbToGba(selected.data(),stored,format);
+                if(!preview.ok && preview.error=="Source legality cannot be confirmed") {
+                    const auto repair=proposeRepair(selected,stored,format);
+                    if(repair.available) {
+                        entry.repairAvailable=true;
+                        entry.repairChanges=repair.changes;
+                        if(requested) {
+                            auto corrected=previewGbToGba(repair.bytes.data(),stored,format);
+                            if(corrected.ok) {
+                                preview=std::move(corrected);
+                                entry.repaired=true;
+                            }
+                        }
+                    }
+                }
                 entry.notes=std::move(preview.notes);
-                if(!preview.ok) entry.error=preview.error;
+                if(requested&&!entry.repaired) entry.error="Repair unavailable for this Pokemon";
+                else if(!preview.ok) entry.error=preview.error;
                 else {
                     entry.ready=true;
+                    if(entry.repaired) {
+                        entry.notes.insert(entry.notes.begin(),"Optional Repair for Transfer applied to conversion copy only");
+                        for(const auto& change:entry.repairChanges)
+                            entry.notes.push_back("Repair: "+change);
+                    }
                     if(pocket>=0) {
                         plannedBag[pocket]=std::move(updated);changedBag[pocket]=true;
                         entry.returnedItem=heldItem;
@@ -311,8 +388,9 @@ struct BatchStage::State {
     }
 };
 BatchStage::BatchStage(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
-                       const std::vector<TransferPair>& pairs,uint8_t sourceLanguage)
-    :state_(new State(source,destination,pairs,sourceLanguage)) {}
+                       const std::vector<TransferPair>& pairs,uint8_t sourceLanguage,
+                       const std::vector<size_t>& repairIndices)
+    :state_(new State(source,destination,pairs,sourceLanguage,repairIndices)) {}
 BatchStage::~BatchStage()=default;
 bool BatchStage::step(){return state_->step();}
 size_t BatchStage::completed() const{return state_->index;}
@@ -323,8 +401,9 @@ StagedTransfer BatchStage::take(){
     return std::move(state_->result);
 }
 StagedTransfer stageGbBatch(const std::vector<uint8_t>& source,const std::vector<uint8_t>& destination,
-                           const std::vector<TransferPair>& pairs,uint8_t sourceLanguage) {
-    BatchStage batch(source,destination,pairs,sourceLanguage);
+                           const std::vector<TransferPair>& pairs,uint8_t sourceLanguage,
+                           const std::vector<size_t>& repairIndices) {
+    BatchStage batch(source,destination,pairs,sourceLanguage,repairIndices);
     while(!batch.step()) {}
     return batch.take();
 }
