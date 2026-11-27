@@ -335,6 +335,47 @@ int main() {
         }
         std::puts("PASS: generated 36 synthetic locale/destination audit cases (including explicit refusals)");
     }
+    // VPT038: broken EXP blocks normal PCCS review; an explicit repair
+    // may reconstruct the derived EXP only when the repaired conversion
+    // passes Gen II legality AND PCCS, without changing either input image.
+    {
+        auto source=sv::loadSaveFile(fakegb::blankGen2(fakegb::kGen2Crystal));
+        auto destination=sv::loadSaveFile(fake::blankGen3(sv::Game::RubySapphire));
+        REQUIRE(source&&destination);
+        pk::create4::Trainer t;t.name="ASH";t.tid=12345;t.version=41;t.language=2;
+        auto mon=pk::create4::newPokemon(t,155,5,255);mon.heldItem=0;
+        std::array<uint8_t,pk::entity::kMaxPartySize> broken{};
+        pk::create4::encode(mon,broken.data());
+        broken[pk::pk2::offset::kExp]=0;
+        broken[pk::pk2::offset::kExp+1]=0;
+        broken[pk::pk2::offset::kExp+2]=1;
+        REQUIRE(source->writeBoxSlot(0,0,broken.data()));
+        source->refreshChecksums();destination->refreshChecksums();
+        const auto sb=source->data(),db=destination->data();
+        const std::vector<br::TransferPair> pairs={{{0,0},{0,0}}};
+        auto refused=br::stageGbBatch(sb,db,pairs,2);
+        REQUIRE(!refused.ok&&!refused.entries.empty());
+        REQUIRE(!refused.entries[0].ready&&refused.entries[0].repairAvailable);
+        REQUIRE(!refused.entries[0].repairChanges.empty());
+        REQUIRE(refused.sourceAfter.empty()&&refused.destinationAfter.empty());
+        REQUIRE(!br::stageGbBatch(sb,db,pairs,2,{1}).ok);
+        REQUIRE(!br::stageGbBatch(sb,db,pairs,2,{0,0}).ok);
+        auto approved=br::stageGbBatch(sb,db,pairs,2,{0});
+        if(!approved.ok) std::fprintf(stderr,"Repair refused: %s\n",approved.error.c_str());
+        REQUIRE(approved.ok&&approved.entries.size()==1&&approved.entries[0].repaired);
+        REQUIRE(!approved.entries[0].repairChanges.empty());
+        REQUIRE(sb==source->data()&&db==destination->data()); // inputs untouched
+        auto before=sv::loadSaveFile(sb),afterS=sv::loadSaveFile(approved.sourceAfter),
+             afterD=sv::loadSaveFile(approved.destinationAfter);
+        REQUIRE(before&&afterS&&afterD);
+        REQUIRE(sv::validateSave(*afterS)&&sv::validateSave(*afterD));
+        REQUIRE(before->readBoxSlot(0,0,broken.data())==sv::SlotState::Valid);
+        REQUIRE(afterS->readBoxSlot(0,0,broken.data())==sv::SlotState::Empty);
+        REQUIRE(afterD->readBoxSlot(0,0,broken.data())==sv::SlotState::Valid);
+        const auto converted=pk::pk3::toPokemon(broken.data(),80);
+        REQUIRE(converted.species==155&&converted.level==5&&converted.trainer.tid==12345);
+        std::puts("PASS: VPT038 opt-in repaired candidate, exact source removal, original snapshots unchanged");
+    }
     std::puts("PASS: staged Crystal to Ruby/Sapphire save round-trip; source compaction, exact destination, party and other boxes preserved; rejection cases passed");
     return 0;
 }
